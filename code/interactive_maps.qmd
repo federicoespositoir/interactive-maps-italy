@@ -1,0 +1,830 @@
+---
+title: "Interactive_Maps_Rome_Project"
+author: "Federico Esposito"
+format: html
+editor: visual
+---
+
+# Loading relevant packages
+
+```{r}
+# Output folder: the two interactive maps live next to this file.
+path_out <- "~/Desktop/Data Science/R & Stats/Progetti/Mappe_Interattive"
+
+# Load required packages
+library(dplyr)
+library(leaflet)
+library(sf)
+library(htmlwidgets)
+library(htmltools)
+
+
+# lo scrivi **una volta sola; vale per tutto il file
+# Quindi senza `library': `%>%` → errore; `filter()` → errore; ...
+
+```
+
+# Interactive Maps from the New_Applied_Rome_RProject from a new complete dataset
+
+```{r}
+library(readxl)
+library(dplyr)
+
+path_data <- "~/Desktop/Data Science/Excel & Stats"
+
+complete_data <- read_excel("~/Desktop/Data Science/Excel & Stats/Complete_dataset.xlsx")
+
+names(complete_data)
+
+```
+
+New cleaned version of the excel file
+
+```{r}
+complete_data_clean <- complete_data[-1, ] %>%
+  dplyr::select(
+    provincia = ...2,
+    fdi = ...12,
+    lega = ...13,
+    prrp = ...14,
+    turnout = ...15
+  ) %>%
+  mutate(
+    provincia = toupper(provincia),
+    fdi = as.numeric(gsub("%", "", fdi)),
+    lega = as.numeric(gsub("%", "", lega)),
+    prrp = as.numeric(gsub("%", "", prrp)),
+    turnout = as.numeric(gsub("%", "", turnout))
+  )
+
+glimpse(complete_data_clean)
+```
+
+Changing to match names:
+
+```{r}
+complete_data_clean <- complete_data_clean %>%
+  mutate(
+    provincia = case_when(
+      provincia == "FORLI'-CESENA" ~ "FORLI-CESENA",
+      provincia == "MASSA CARRARA" ~ "MASSA-CARRARA",
+      TRUE ~ provincia
+    )
+  )
+```
+
+```{r}
+library(dplyr)
+
+# The imported Excel file contains one extra empty row.
+# This step removes that row and restores the correct total of 107 provinces.
+complete_data_clean <- complete_data_clean %>%
+  filter(!is.na(provincia), provincia != "")
+
+nrow(complete_data_clean)
+```
+
+```{r}
+prov_shape_original <- st_read("~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/ProvCM01012024/ProvCM01012024_WGS84.shp")
+
+prov_shape_interactive <- prov_shape_original %>%
+  mutate(DEN_UTS = toupper(DEN_UTS))
+
+map_prov_interactive <- prov_shape_interactive %>%
+  left_join(complete_data_clean, by = c("DEN_UTS" = "provincia"))
+```
+
+```{r}
+complete_data_clean <- complete_data_clean %>%
+  mutate(
+    provincia = case_when(
+      provincia == "FORLÌ-CESENA" ~ "FORLI'-CESENA",
+      provincia == "MASSA-CARRARA" ~ "MASSA CARRARA",
+      TRUE ~ provincia
+    )
+  )
+```
+
+## Interactive map simple
+
+```{r}
+
+# 1. Read original province / metropolitan city shapefile
+prov_shape_original <- st_read(
+  "~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/ProvCM01012024/ProvCM01012024_WGS84.shp"
+)
+
+# 2. Clean names in the electoral dataset so that they match the shapefile
+complete_data_clean <- complete_data_clean %>%
+  mutate(
+    provincia = case_when(
+      provincia == "FORLÌ-CESENA" ~ "FORLI'-CESENA",
+      provincia == "MASSA-CARRARA" ~ "MASSA CARRARA",
+      TRUE ~ provincia
+    )
+  )
+
+# 3. Prepare a separate shapefile object for the interactive map
+# create a copy of the shapefile to avoid modifying the original object
+prov_shape_interactive <- prov_shape_original %>%
+  mutate(DEN_UTS = toupper(DEN_UTS))
+
+# 4. Join shapefile + electoral data
+map_prov_interactive <- prov_shape_interactive %>%
+  left_join(complete_data_clean, by = c("DEN_UTS" = "provincia"))
+
+# 5. Transform CRS to longitude / latitude for Leaflet
+# transform coordinates to WGS84 (latitudine-longitudine) because Leaflet does not support UTM (metriche)
+map_prov_leaflet <- st_transform(map_prov_interactive, 4326)
+
+# 6. Create color palette based on PRRP vote share
+# In leaflet, color direction is controlled with rev(), not direction = 1 (ggplot only)
+pal_prrp <- colorNumeric(
+  palette = "BuPu",
+  domain = map_prov_leaflet$prrp
+)
+
+# 7. Interactive choropleth map
+leaflet(map_prov_leaflet) %>%
+  # NOTE (Sept 2026): CARTO now requires a free API key for its basemap tiles,
+  # so anonymous requests come back stamped "API KEY REQUIRED". Verified by fetching
+  # a tile directly with curl, outside any of these files: the watermark is baked in
+  # by CARTO's own server.
+  # The original line below is deliberately left untouched.
+  #
+  # Positron packed grey canvas + borders + place names into one tile layer.
+  # Esri splits them in two, so the keyless replacement needs BOTH, in this order:
+  #   addProviderTiles("Esri.WorldGrayCanvas")    %>%   # grey canvas
+  #   addProviderTiles("Esri.WorldGrayReference") %>%   # borders and place names
+  # Using only the first gives a blank grey field with no names: that is what the
+  # first attempt looked like.
+  #
+  # The three saved .html maps were patched this way without re-rendering. See
+  # leaflet-providers_2.0.0.js in each *_files folder; the CARTO original sits next
+  # to it as .originale_carto.
+  #
+  # Avoid plain addTiles() / OpenStreetMap here: it draws roads, terrain and forests,
+  # which fight with a choropleth. Esri's grey canvas keeps the data in front.
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(
+    fillColor = ~pal_prrp(prrp),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    popup = ~paste0(
+      "<strong>", DEN_UTS, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%<br/>",
+      "PRRP: ", round(prrp * 100, 1), "%"
+    )
+  ) %>%
+  addLegend(
+    pal = pal_prrp,
+    values = ~prrp,
+    title = "PRRP vote share",
+    position = "bottomright"
+  )
+```
+
+## Another switching map: PRRP, Turnout, Lega, FDI across Italian provinces and metropolitan cities
+
+```{r}
+#| eval: false
+# I put #| eval: false at the top of the chunk bc for "heavy" chunks so they are not displaying in the html file and I can run the html, I should put #| eval: true (or without it bc it is by default) - but in this case NO bc it will undo the chunk so that the objects to display the maps in the html file will not diplay the map
+
+# in html file output this type of switching map is too heavy but I saved the definitive version with the legends
+
+# Excel stores percentages as decimal proportions (e.g. 26% = 0.26),
+# so percentages are multiplied by 100 in the popup for readability.
+
+prov_shape_original <- st_read(
+  "~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/ProvCM01012024/ProvCM01012024_WGS84.shp"
+)
+
+complete_data_clean <- complete_data_clean %>%
+  mutate(
+    provincia = case_when(
+      provincia == "FORLÌ-CESENA" ~ "FORLI'-CESENA",
+      provincia == "MASSA-CARRARA" ~ "MASSA CARRARA",
+      TRUE ~ provincia
+    )
+  )
+
+prov_shape_interactive <- prov_shape_original %>%
+  mutate(DEN_UTS = toupper(DEN_UTS))
+
+map_prov_interactive <- prov_shape_interactive %>%
+  left_join(complete_data_clean, by = c("DEN_UTS" = "provincia"))
+
+map_prov_leaflet <- st_transform(map_prov_interactive, 4326)
+
+pal_prrp <- colorNumeric(
+  palette = "BuPu",
+  domain = map_prov_leaflet$prrp
+)
+
+pal_turnout <- colorNumeric(
+  palette = "OrRd",
+  domain = map_prov_leaflet$turnout
+)
+
+pal_fdi <- colorNumeric(
+  palette = "PuBu",
+  domain = map_prov_leaflet$fdi
+)
+
+pal_lega <- colorNumeric(
+  palette = "BuGn",
+  domain = map_prov_leaflet$lega
+)
+
+map_layers_test <- leaflet(map_prov_leaflet) %>%
+  # NOTE (Sept 2026): CARTO now requires a free API key for its basemap tiles,
+  # so anonymous requests come back stamped "API KEY REQUIRED". Verified by fetching
+  # a tile directly with curl, outside any of these files: the watermark is baked in
+  # by CARTO's own server.
+  # The original line below is deliberately left untouched.
+  #
+  # Positron packed grey canvas + borders + place names into one tile layer.
+  # Esri splits them in two, so the keyless replacement needs BOTH, in this order:
+  #   addProviderTiles("Esri.WorldGrayCanvas")    %>%   # grey canvas
+  #   addProviderTiles("Esri.WorldGrayReference") %>%   # borders and place names
+  # Using only the first gives a blank grey field with no names: that is what the
+  # first attempt looked like.
+  #
+  # The three saved .html maps were patched this way without re-rendering. See
+  # leaflet-providers_2.0.0.js in each *_files folder; the CARTO original sits next
+  # to it as .originale_carto.
+  #
+  # Avoid plain addTiles() / OpenStreetMap here: it draws roads, terrain and forests,
+  # which fight with a choropleth. Esri's grey canvas keeps the data in front.
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  addPolygons(
+    fillColor = ~pal_prrp(prrp),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "PRRP",
+    popup = ~paste0(
+      "<strong>", DEN_UTS, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%<br/>",
+      "PRRP: ", round(prrp * 100, 1), "%"
+    )
+  ) %>%
+  
+  addPolygons(
+    fillColor = ~pal_turnout(turnout),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "Turnout",
+    popup = ~paste0(
+      "<strong>", DEN_UTS, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%<br/>",
+      "PRRP: ", round(prrp * 100, 1), "%"
+    )
+  ) %>%
+  
+  addPolygons(
+    fillColor = ~pal_fdi(fdi),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "FDI",
+    popup = ~paste0(
+      "<strong>", DEN_UTS, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%<br/>",
+      "PRRP: ", round(prrp * 100, 1), "%"
+    )
+  ) %>%
+  
+  addPolygons(
+    fillColor = ~pal_lega(lega),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "Lega",
+    popup = ~paste0(
+      "<strong>", DEN_UTS, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%<br/>",
+      "PRRP: ", round(prrp * 100, 1), "%"
+    )
+  ) %>%
+  
+  addLayersControl(
+    baseGroups = c("PRRP", "Turnout", "FDI", "Lega"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  
+  hideGroup(c("Turnout", "FDI", "Lega"))
+
+map_layers_test
+```
+
+## Another switching map: PRRP, Turnout, Lega, FDI across Italian provinces and metropolitan cities with legends
+
+```{r}
+#| eval: false
+# in html file output this type of switching map is too heavy but I saved the definitive version with the legends
+
+# transform coordinates to WGS84 (latitudine-longitudine) because Leaflet does not support UTM (metriche)
+map_prov_leaflet <- st_transform(map_prov_interactive, 4326)
+
+# helper function: create legend HTML with manual breaks
+make_legend_html <- function(title, pal, bins) {
+  mids <- (bins[-1] + bins[-length(bins)]) / 2
+  cols <- pal(mids)
+
+  labels <- paste0(
+    round(bins[-length(bins)] * 100, 0), "% – ",
+    round(bins[-1] * 100, 0), "%"
+  )
+
+  rows <- paste0(
+    "<div style='display:flex; align-items:center; margin-bottom:4px;'>",
+    "<span style='display:inline-block; width:18px; height:12px; background:",
+    cols,
+    "; margin-right:8px; border:1px solid #999;'></span>",
+    "<span>", labels, "</span>",
+    "</div>",
+    collapse = ""
+  )
+
+  paste0(
+    "<div style='background:white; padding:10px 12px; border-radius:6px; ",
+    "box-shadow:0 1px 5px rgba(0,0,0,0.3); font-size:13px;'>",
+    "<div style='font-weight:600; margin-bottom:8px;'>", title, "</div>",
+    rows,
+    "</div>"
+  )
+}
+
+# palettes
+pal_prrp <- colorNumeric("BuPu", domain = map_prov_leaflet$prrp)
+pal_turnout <- colorNumeric("OrRd", domain = map_prov_leaflet$turnout)
+pal_fdi <- colorNumeric("PuBu", domain = map_prov_leaflet$fdi)
+pal_lega <- colorNumeric("BuGn", domain = map_prov_leaflet$lega)
+
+# manual breaks
+# min & max automatically detect the lower % in the map per category prrp, turnout, fdi, lega
+bins_prrp <- c(
+  min(map_prov_leaflet$prrp, na.rm = TRUE),
+  0.30, 0.40, 0.50,
+  max(map_prov_leaflet$prrp, na.rm = TRUE)
+)
+
+bins_turnout <- c(
+  min(map_prov_leaflet$turnout, na.rm = TRUE),
+  0.40, 0.50, 0.60,
+  max(map_prov_leaflet$turnout, na.rm = TRUE)
+)
+
+bins_fdi <- c(
+  min(map_prov_leaflet$fdi, na.rm = TRUE),
+  0.22, 0.29, 0.36,
+  max(map_prov_leaflet$fdi, na.rm = TRUE)
+)
+
+bins_lega <- c(
+  min(map_prov_leaflet$lega, na.rm = TRUE),
+  0.10, 0.15, 0.20,
+  max(map_prov_leaflet$lega, na.rm = TRUE)
+)
+
+# pre-build legends
+legend_list <- list(
+  Turnout = make_legend_html("Turnout share", pal_turnout, bins_turnout),
+  PRRP = make_legend_html("PRRP vote share", pal_prrp, bins_prrp),
+  FDI = make_legend_html("FDI vote share", pal_fdi, bins_fdi),
+  Lega = make_legend_html("Lega vote share", pal_lega, bins_lega)
+)
+
+map_layers_dynamic <- leaflet(map_prov_leaflet) %>%
+  # NOTE (Sept 2026): CARTO now requires a free API key for its basemap tiles,
+  # so anonymous requests come back stamped "API KEY REQUIRED". Verified by fetching
+  # a tile directly with curl, outside any of these files: the watermark is baked in
+  # by CARTO's own server.
+  # The original line below is deliberately left untouched.
+  #
+  # Positron packed grey canvas + borders + place names into one tile layer.
+  # Esri splits them in two, so the keyless replacement needs BOTH, in this order:
+  #   addProviderTiles("Esri.WorldGrayCanvas")    %>%   # grey canvas
+  #   addProviderTiles("Esri.WorldGrayReference") %>%   # borders and place names
+  # Using only the first gives a blank grey field with no names: that is what the
+  # first attempt looked like.
+  #
+  # The three saved .html maps were patched this way without re-rendering. See
+  # leaflet-providers_2.0.0.js in each *_files folder; the CARTO original sits next
+  # to it as .originale_carto.
+  #
+  # Avoid plain addTiles() / OpenStreetMap here: it draws roads, terrain and forests,
+  # which fight with a choropleth. Esri's grey canvas keeps the data in front.
+  addProviderTiles("CartoDB.Positron") %>%
+
+  addPolygons(
+    fillColor = ~pal_prrp(prrp),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "PRRP",
+    popup = ~paste0(
+      "<strong>", DEN_UTS, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%<br/>",
+      "PRRP: ", round(prrp * 100, 1), "%"
+    )
+  ) %>%
+
+  addPolygons(
+    fillColor = ~pal_turnout(turnout),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "Turnout",
+    popup = ~paste0(
+      "<strong>", DEN_UTS, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%<br/>",
+      "PRRP: ", round(prrp * 100, 1), "%"
+    )
+  ) %>%
+
+  addPolygons(
+    fillColor = ~pal_fdi(fdi),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "FDI",
+    popup = ~paste0(
+      "<strong>", DEN_UTS, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%<br/>",
+      "PRRP: ", round(prrp * 100, 1), "%"
+    )
+  ) %>%
+
+  addPolygons(
+    fillColor = ~pal_lega(lega),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "Lega",
+    popup = ~paste0(
+      "<strong>", DEN_UTS, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%<br/>",
+      "PRRP: ", round(prrp * 100, 1), "%"
+    )
+  ) %>%
+
+  addLayersControl(
+    baseGroups = c("Turnout", "PRRP", "FDI", "Lega"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+
+  hideGroup(c("PRRP", "FDI", "Lega")) %>%
+
+  addControl(
+    html = legend_list$Turnout,
+    position = "bottomright",
+    className = "dynamic-legend"
+  ) %>% #The %>% (pipe operator) passes the output of one function directly into the next,
+# allowing you to chain multiple operations in a clear, readable, step-by-step workflow.
+
+  onRender(
+    "
+    function(el, x, data) {
+      var map = this;
+      var legend = document.querySelector('.dynamic-legend');
+
+      function updateLegend(groupName) {
+        if (legend && data.legends[groupName]) {
+          legend.innerHTML = data.legends[groupName];
+        }
+      }
+
+      updateLegend('Turnout');
+
+      map.on('baselayerchange', function(e) {
+        updateLegend(e.name);
+      });
+    }
+    ",
+    data = list(legends = legend_list)
+  )
+
+# This version uses one single legend container and updates its HTML dynamically
+# when the active layer changes, so the legend always matches the selected variable.
+
+# Manual breaks are used instead of automatic pretty() intervals
+# to keep the legend cleaner and more consistent with the actual map colors.
+```
+
+```{r}
+#| eval: false
+# This block is kept as documentation, not run at render time.
+# interactive_map_final.html is a heavy, pre-built artifact stored next to this file:
+# rendering must never overwrite it. Run this chunk by hand to rebuild it.
+library(htmlwidgets)
+
+path_out <- "~/Desktop/Data Science/R & Stats/Progetti/Mappe_Interattive"
+
+saveWidget(
+  map_layers_dynamic,
+  file.path(path_out, "interactive_map_final.html"),
+  selfcontained = FALSE
+)
+```
+
+# Rome maps
+
+```{r}
+#| eval: false
+# Not run at render time. This chunk needs prrp_by_comune_map, turnout_by_comune_map,
+# fdi_by_comune_map and lega_by_comune_map, which are built by
+# New_Applied_Rome_RProject.qmd, not by this file. Run that project first,
+# then run this chunk by hand to rebuild the Rome map.
+library(sf)
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+library(htmltools)
+
+# 1) Keep only the municipalities of the Metropolitan City of Rome
+roma_prrp_sf <- prrp_by_comune_map %>%
+  filter(COD_PROV == 58) %>%
+  select(COD_PROV, COMUNE, join_name, prrp_vote_share_pct, geometry)
+
+roma_turnout_sf <- turnout_by_comune_map %>%
+  filter(COD_PROV == 58) %>%
+  select(COD_PROV, COMUNE, join_name, turnout_pct, geometry)
+
+roma_fdi_sf <- fdi_by_comune_map %>%
+  filter(COD_PROV == 58) %>%
+  select(COD_PROV, COMUNE, join_name, vote_share_pct, geometry) %>%
+  rename(fdi_vote_share_pct = vote_share_pct)
+
+roma_lega_sf <- lega_by_comune_map %>%
+  filter(COD_PROV == 58) %>%
+  select(COD_PROV, COMUNE, join_name, vote_share_pct, geometry) %>%
+  rename(lega_vote_share_pct = vote_share_pct)
+
+# 2) Join the four layers into one sf object
+roma_interactive_map <- roma_turnout_sf %>%
+  left_join(
+    st_drop_geometry(roma_prrp_sf) %>%
+      select(join_name, prrp_vote_share_pct),
+    by = "join_name"
+  ) %>%
+  left_join(
+    st_drop_geometry(roma_fdi_sf) %>%
+      select(join_name, fdi_vote_share_pct),
+    by = "join_name"
+  ) %>%
+  left_join(
+    st_drop_geometry(roma_lega_sf) %>%
+      select(join_name, lega_vote_share_pct),
+    by = "join_name"
+  ) %>%
+  st_as_sf()
+
+# 3) Convert percentages to proportions for leaflet legend control
+roma_interactive_map <- roma_interactive_map %>%
+  mutate(
+    turnout = turnout_pct / 100,
+    prrp = prrp_vote_share_pct / 100,
+    fdi = fdi_vote_share_pct / 100,
+    lega = lega_vote_share_pct / 100
+  )
+
+# 4) Transform coordinates to WGS84 for Leaflet
+roma_interactive_leaflet <- st_transform(roma_interactive_map, 4326)
+
+# 5) Helper function for dynamic legends
+make_legend_html <- function(title, pal, bins) {
+  mids <- (bins[-1] + bins[-length(bins)]) / 2
+  cols <- pal(mids)
+
+  labels <- paste0(
+    round(bins[-length(bins)] * 100, 0), "% – ",
+    round(bins[-1] * 100, 0), "%"
+  )
+
+  rows <- paste0(
+    "<div style='display:flex; align-items:center; margin-bottom:4px;'>",
+    "<span style='display:inline-block; width:18px; height:12px; background:",
+    cols,
+    "; margin-right:8px; border:1px solid #999;'></span>",
+    "<span>", labels, "</span>",
+    "</div>",
+    collapse = ""
+  )
+
+  paste0(
+    "<div style='background:white; padding:10px 12px; border-radius:6px; ",
+    "box-shadow:0 1px 5px rgba(0,0,0,0.3); font-size:13px;'>",
+    "<div style='font-weight:600; margin-bottom:8px;'>", title, "</div>",
+    rows,
+    "</div>"
+  )
+}
+
+# 6) Palettes
+pal_turnout_roma <- colorNumeric(
+  "OrRd",
+  domain = roma_interactive_leaflet$turnout,
+  na.color = "#d9d9d9"
+)
+
+pal_prrp_roma <- colorNumeric(
+  "BuPu",
+  domain = roma_interactive_leaflet$prrp,
+  na.color = "#d9d9d9"
+)
+
+pal_fdi_roma <- colorNumeric(
+  "PuBu",
+  domain = roma_interactive_leaflet$fdi,
+  na.color = "#d9d9d9"
+)
+
+pal_lega_roma <- colorNumeric(
+  "BuGn",
+  domain = roma_interactive_leaflet$lega,
+  na.color = "#d9d9d9"
+)
+
+# 7) Manual breaks
+bins_turnout_roma <- c(
+  min(roma_interactive_leaflet$turnout, na.rm = TRUE),
+  0.45, 0.55, 0.65,
+  max(roma_interactive_leaflet$turnout, na.rm = TRUE)
+)
+
+bins_prrp_roma <- c(
+  min(roma_interactive_leaflet$prrp, na.rm = TRUE),
+  0.20, 0.30, 0.40,
+  max(roma_interactive_leaflet$prrp, na.rm = TRUE)
+)
+
+bins_fdi_roma <- c(
+  min(roma_interactive_leaflet$fdi, na.rm = TRUE),
+  0.15, 0.25, 0.35,
+  max(roma_interactive_leaflet$fdi, na.rm = TRUE)
+)
+
+bins_lega_roma <- c(
+  min(roma_interactive_leaflet$lega, na.rm = TRUE),
+  0.03, 0.06, 0.09,
+  max(roma_interactive_leaflet$lega, na.rm = TRUE)
+)
+
+# 8) Dynamic legend list
+legend_list_roma <- list(
+  Turnout = make_legend_html("Turnout share", pal_turnout_roma, bins_turnout_roma),
+  PRRP = make_legend_html("PRRP vote share", pal_prrp_roma, bins_prrp_roma),
+  FDI = make_legend_html("FDI vote share", pal_fdi_roma, bins_fdi_roma),
+  Lega = make_legend_html("Lega vote share", pal_lega_roma, bins_lega_roma)
+)
+
+# 9) Interactive leaflet map
+roma_layers_dynamic <- leaflet(roma_interactive_leaflet) %>%
+  # NOTE (Sept 2026): CARTO now requires a free API key for its basemap tiles,
+  # so anonymous requests come back stamped "API KEY REQUIRED". Verified by fetching
+  # a tile directly with curl, outside any of these files: the watermark is baked in
+  # by CARTO's own server.
+  # The original line below is deliberately left untouched.
+  #
+  # Positron packed grey canvas + borders + place names into one tile layer.
+  # Esri splits them in two, so the keyless replacement needs BOTH, in this order:
+  #   addProviderTiles("Esri.WorldGrayCanvas")    %>%   # grey canvas
+  #   addProviderTiles("Esri.WorldGrayReference") %>%   # borders and place names
+  # Using only the first gives a blank grey field with no names: that is what the
+  # first attempt looked like.
+  #
+  # The three saved .html maps were patched this way without re-rendering. See
+  # leaflet-providers_2.0.0.js in each *_files folder; the CARTO original sits next
+  # to it as .originale_carto.
+  #
+  # Avoid plain addTiles() / OpenStreetMap here: it draws roads, terrain and forests,
+  # which fight with a choropleth. Esri's grey canvas keeps the data in front.
+  addProviderTiles("CartoDB.Positron") %>%
+
+  addPolygons(
+    fillColor = ~pal_turnout_roma(turnout),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "Turnout",
+    popup = ~paste0(
+      "<strong>", COMUNE, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "PRRPs: ", round(prrp * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%"
+    )
+  ) %>%
+
+  addPolygons(
+    fillColor = ~pal_prrp_roma(prrp),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "PRRP",
+    popup = ~paste0(
+      "<strong>", COMUNE, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "PRRPs: ", round(prrp * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%"
+    )
+  ) %>%
+
+  addPolygons(
+    fillColor = ~pal_fdi_roma(fdi),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "FDI",
+    popup = ~paste0(
+      "<strong>", COMUNE, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "PRRPs: ", round(prrp * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%"
+    )
+  ) %>%
+
+  addPolygons(
+    fillColor = ~pal_lega_roma(lega),
+    weight = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    group = "Lega",
+    popup = ~paste0(
+      "<strong>", COMUNE, "</strong><br/>",
+      "Turnout: ", round(turnout * 100, 1), "%<br/>",
+      "PRRPs: ", round(prrp * 100, 1), "%<br/>",
+      "FDI: ", round(fdi * 100, 1), "%<br/>",
+      "Lega: ", round(lega * 100, 1), "%"
+    )
+  ) %>%
+
+  addLayersControl(
+    baseGroups = c("Turnout", "PRRP", "FDI", "Lega"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+
+  hideGroup(c("PRRP", "FDI", "Lega")) %>%
+
+  addControl(
+    html = legend_list_roma$Turnout,
+    position = "bottomright",
+    className = "dynamic-legend"
+  ) %>%
+
+  onRender(
+    "
+    function(el, x, data) {
+      var map = this;
+      var legend = document.querySelector('.dynamic-legend');
+
+      function updateLegend(groupName) {
+        if (legend && data.legends[groupName]) {
+          legend.innerHTML = data.legends[groupName];
+        }
+      }
+
+      updateLegend('Turnout');
+
+      map.on('baselayerchange', function(e) {
+        updateLegend(e.name);
+      });
+    }
+    ",
+    data = list(legends = legend_list_roma)
+  )
+
+# 10) Save external HTML
+saveWidget(
+  roma_layers_dynamic,
+  file.path(path_out, "interactive_map_roma_turnout_prrp_fdi_lega.html"),
+  selfcontained = FALSE
+)
+
+roma_layers_dynamic
+```

@@ -1,0 +1,2650 @@
+---
+title: "Turnout and PRRP in Rome and Italy from EU 2024"
+author: "Federico Esposito"
+date: "January 23, 2025"
+format:
+  html:
+    toc: true
+    number-sections: true
+    colorlinks: true
+    smooth-scroll: true
+    embed-resources: true
+---
+
+# Introduction
+
+## Dataset description
+
+The dataset contains the results of the 2024 European Elections for all Italian municipalities, for every party list (so, parties' voting patterns at municipality level). 
+Each row represents:
+- one Comune
+- one party/list
+- the number of votes obtained by that list in that Comune
+The dataset also includes information on:
+- region
+- province/città metropolitana
+- municipality
+- electors and voters
+- blank and contested ballots
+
+The dataset was retrieved from Ministero dell'Interno as cvs.file (Eligendo website) in the folder at the following link: <https://elezionistorico.interno.gov.it/eligendo/opendata.php>
+
+```{r}
+# Defining Paths
+path_data <- "~/Desktop/Data Science/R & Stats/Progetti/Roma_Italia_EU2024/Dati/LivComune_Europee_2024_IT"
+
+# Output folders: figures and tables are written straight into the project subfolders,
+# so re-rendering rebuilds the folder structure without moving files by hand.
+path_out_maps    <- "~/Desktop/Data Science/R & Stats/Progetti/Roma_Italia_EU2024/Maps"
+path_out_scatter <- "~/Desktop/Data Science/R & Stats/Progetti/Roma_Italia_EU2024/Scatterplots"
+path_out_tables  <- "~/Desktop/Data Science/R & Stats/Progetti/Roma_Italia_EU2024/Tables"
+dir.create(path_out_maps,    showWarnings = FALSE, recursive = TRUE)
+dir.create(path_out_scatter, showWarnings = FALSE, recursive = TRUE)
+dir.create(path_out_tables,  showWarnings = FALSE, recursive = TRUE)
+
+Europee24_Italia_df <- read.csv(file.path(path_data, "EUROPEE_ITALIA_LivComune.csv"))
+```
+
+```{r}
+Europee24_Italia_df <- read.csv(
+  file.path(path_data, "EUROPEE_ITALIA_LivComune.csv"),
+  sep = ";")
+```
+(here I added ";" for proper visualization of the dataset)
+
+# Turnout and abstention
+
+## Subsetting Rome's turnout data by province
+
+So: only Rome considered as province (all constituencies within Rome province)
+```{r}
+rome_province <- Europee24_Italia_df[Europee24_Italia_df$DESCPROVINCIA == "ROMA",]
+
+head(rome_province, n=10)
+```
+## Subsetting Rome's turnout data by municipality(commune)
+
+So: only Rome considered as municipality ("comune di Roma") (all constitiuencies within Rome province)
+```{r}
+rome_comune <- Europee24_Italia_df[Europee24_Italia_df$DESCCOMUNE == "ROMA",]
+
+head(rome_comune, n=10)
+```
+
+## Electors vs Voters
+
+**Electors** are individuals who are eligible to vote (they have the right to vote but not necessarily have cast a vote at the 2024 European Elections.
+
+**Voters** are those who actually cast a vote at these elections.
+
+By definition:
+Voters ≤ Electors and from their gap we can obtain the **abstention level**.
+```{r}
+mean(Europee24_Italia_df$ELETTORI, na.rm = TRUE)
+```
+Average of electors in Italy at the 2024 European Elections. 
+
+na.rm = TRUE is used to remove missing values (NA)
+
+```{r}
+mean(Europee24_Italia_df$VOTANTI, na.rm=TRUE)
+```
+Average of voters in Italy at the 2024 European Elections. 
+
+## Levels of Turnout and abstention
+
+The dataset is at municipality (Comune) level for the whole of Italy.
+Average number of electors per municipality (Italy):
+6,264.789
+Average number of voters per municipality (Italy):
+3,118.848
+This means that, on average, **only about half** of the eligible electors actually voted.
+
+The *gap* between electors and voters reflects *voter abstention*.
+
+So, at the national level:
+the average Italian municipality shows significant non-participation
+and turnout is well below full electoral participation
+This difference provides a first descriptive indication of electoral abstention patterns across Italian municipalities at the more recent elections comprising the whole national territory (this is why I chose the dataframe from these elections)
+
+## Rome Province/Città Metropolitana
+
+We can do the same reasoning if we subset at the province level (more accurately, Città Metropolitana) focusing on Rome province/città metropolitana:
+```{r}
+mean(rome_province$ELETTORI, na.rm =TRUE)
+mean(rome_province$VOTANTI, na.rm =TRUE)
+```
+Average electors (Rome province):
+28,571.64
+Average voters (Rome province):
+12,876.02
+This indicates that, even in the **Rome province**, **less than half** of eligible electors actually voted on average
+The gap between electors and voters *again reflects electoral abstention*, this time within a more urbanized and populous context compared to the national average.
+
+## Rome Municipality
+```{r}
+mean(rome_comune$ELETTORI, na.rm=TRUE)
+mean(rome_comune$VOTANTI, na.rm =TRUE)
+```
+
+Also in this case, the electors–voters gap remains remarkably stable across different territorial levels:
+National (average Italian municipality)
+Province of Rome (average municipality within the province/città metropolitana)
+Municipality of Rome (Rome city itself) - in this case the mean corresponds to the actual numbers of both electors and voters because the dataframe is at municipality level and Rome as municipality appears multiple times. This is shaped by how European elections are territorially organized and the design of the electoral constituencies (I think) (to see in detail maybe).
+
+### Interpretation
+
+In all cases, voters are **the half** of the electors, suggesting a **structural pattern of electoral participation** with **significant abstention across all the territorial units** of the dataframe of the 2024 EU elections in Italy.
+
+## Gender gap
+
+We can also check the gender gap across the territorial units of interest.
+
+Average of male and female voters (Rome province)
+```{r}
+mean(rome_province$VOTANTI_M, na.rm =TRUE)
+mean(rome_province$VOTANTI_F, na.rm =TRUE)
+```
+
+Average of male and female voters (Rome municipality)
+```{r}
+mean(rome_comune$VOTANTI_M, na.rm =TRUE)
+mean(rome_comune$VOTANTI_F, na.rm =TRUE)
+```
+
+## Turnout rates across three levels
+
+*Turnout rate* = voters / electors (proportion)
+This measures participation, not population size.
+
+### Turnout Italy
+
+Here we compute turnout using average values across all Italian municipalities (so, the average is **national** but at the municipality level, so the mean refers to the ration between electors and voters in all Italian municipalities of the dataframe)
+
+```{r}
+library(dplyr)
+
+turnout_italy <- Europee24_Italia_df %>%
+  summarise(turnout = mean(VOTANTI / ELETTORI, na.rm = TRUE)) %>%
+mutate(turnout_pct = turnout * 100)
+
+turnout_italy
+```
+So: the national turnout of all Italian cities/municipalities at the 2024 EU elections was roughly 52%, so the ***average municipal turnout***. 
+
+### Turnout of all provinces within the dataframe
+```{r}
+turnout_by_province <- Europee24_Italia_df %>%
+  filter(!is.na(DESCPROVINCIA),
+         DESCPROVINCIA != "") %>%
+  group_by(DESCPROVINCIA) %>%
+  summarise(
+    turnout_pct = 100 * sum(VOTANTI, na.rm = TRUE) /
+                          sum(ELETTORI, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+head(turnout_by_province, n=10)
+```
+This is the table with the % turnout levels of all **Italian Provinces** at the 2024 EU elections.
+
+### Min and Max Turnout at Province Level
+
+This is the province with the lowest turnout: NUORO.
+```{r}
+min_turnout_prov_it <- min(turnout_by_province$turnout_pct, na.rm = TRUE)
+
+lowest_turnout_prov_it <- turnout_by_province %>%
+  filter(turnout_pct == min_turnout_prov_it)
+
+lowest_turnout_prov_it
+```
+And the province with the highest turnout: FIRENZE
+```{r}
+max_turnout_prov_it <- max(turnout_by_province$turnout_pct, na.rm = TRUE)
+
+highest_turnout_prov_it <- turnout_by_province %>%
+  filter(turnout_pct == max_turnout_prov_it)
+
+highest_turnout_prov_it
+```
+## Turnout all municipalities within the dataframe
+
+```{r}
+turnout_by_comune <- Europee24_Italia_df %>%
+  filter(!is.na(DESCPROVINCIA),
+         DESCPROVINCIA != "") %>%
+  group_by(DESCCOMUNE) %>%
+  summarise(
+    turnout_pct = 100 * sum(VOTANTI, na.rm = TRUE) /
+                          sum(ELETTORI, na.rm = TRUE),
+    .groups = "drop"
+  )   
+
+turnout_by_comune
+```
+Also here we may find out with the highest and the lowest turnout levels of Italian municipalities.
+
+## Turnout of Rome as province and as municipality
+
+First, we need to extract/subset Rome as province and as municipalities from turnout_by_province and turnout_by_municipality.
+
+```{r}
+turnout_rome_province <- turnout_by_province %>%
+  filter(DESCPROVINCIA == "ROMA")
+
+turnout_rome_province
+```
+This is the turnout of Rome as province/città metropolitana from the dataset of all Italian provinces.
+
+```{r}
+turnout_rome_comune <- turnout_by_comune %>%
+  filter(DESCCOMUNE == "ROMA")
+
+turnout_rome_comune
+```
+
+
+This is the turnout of Rome as municipality from the dataset of all Italian municipalities.
+
+## Levels of Turnout across Territorial Units
+
+This is how to display the three levels of turnout across the territorial units of analysis.
+```{r}
+bind_rows(
+  Italy = turnout_italy,
+  Roma_Città_Metropolitana = turnout_rome_province,
+  Roma_Comune = turnout_rome_comune,
+  .id = "territorial unit")
+```
+What emerges here is, as said previously, a **systematic "non-voting" pattern** reflecting high abstention across the territorial units under analysis. 
+Drawing on ***"geography of discontent"*** literature (Rodrìguez-Pose, Crulli, Pinto,...) cities and in general urban areas display higher levels of political participation compared to rural areas. 
+
+However, the city of Rome is not above the national average, and if we take Rome as municipality turnout is even lower (at least at the 2024 EU elections).
+The finding also conflicts with the general assumption that capital cities are more politically active.
+
+Can it be the first finding of the analysis? If decide to explore more in detail, I may want to compare Rome with more rural towns and areas to study the relationship between political participation and urban/rural areas.
+
+## Mapping Turnout at Provincial Level
+
+```{r}
+library(sf)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+# Reading Shapefile provinces (from ISTAT)
+prov_shape_clean <- st_read("~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/ProvCM01012024") %>%
+  mutate(
+    # se DEN_PROV è "-", usa DEN_CM (es. Torino, Roma...)
+    join_name = if_else(DEN_PROV == "-", DEN_CM, DEN_PROV),
+    # normalizza (maiuscolo + spazi sistemati)
+    join_name = str_squish(str_to_upper(join_name))
+  )
+
+# Cleaning turnout by province
+turnout_by_province_clean <- turnout_by_province %>%
+  mutate(
+    join_name = str_squish(str_to_upper(DESCPROVINCIA)),
+    # fixing mismatch
+    join_name = case_when(
+      join_name == "REGGIO NELL' EMILIA" ~ "REGGIO NELL'EMILIA",
+      join_name == "MASSA-CARRARA"       ~ "MASSA CARRARA",
+      join_name == "REGGIO EMILIA"       ~ "REGGIO NELL'EMILIA",
+      join_name == "REGGIO CALABRIA"     ~ "REGGIO DI CALABRIA",
+      TRUE ~ join_name
+    )
+  ) %>%
+  select(join_name, turnout_pct)
+
+# Left Join shape files and fdi dataframe
+turnout_by_province_map <- left_join(prov_shape_clean, turnout_by_province_clean, by = "join_name")
+
+# check (should be 0 otherwise grey areas in the map)
+sum(is.na(turnout_by_province_map$turnout_pct))
+
+# Plot
+turnout_by_province_plot <- ggplot(turnout_by_province_map) +
+  geom_sf(aes(fill = turnout_pct), color = "white", linewidth = 0.1) +
+  scale_fill_distiller(palette = "OrRd", direction = 1) +
+  labs(
+    title = "Turnout share by province (EU elections 2024)",
+    fill  = "Turnout share (%)"
+  ) +
+  theme_bw()
+
+# Save plot
+ggsave(file.path(path_out_maps, "turnout_share_province_EU2024.pdf"),
+       plot = turnout_by_province_plot,
+       width = 8,
+       height = 10)
+
+# Print the map in R:
+turnout_by_province_plot
+```
+# FDI voting patterns
+
+What is the relationship between turnout and Fratelli d'Italia (FDI) voting pattern?
+
+I choose this party because:
+– it is the main governing party in Italy;
+– the EU elections took place two years after FDI’s national electoral victory, making them a useful opportunity to assess levels of post-government electoral consensus;
+– according to mainstream academic literature, FDI is widely regarded as a populist party and represents one of the most significant contemporary cases of populism in Europe, in line with established definitions proposed by scholars such as Cas Mudde and Simon Tormey.
+
+Subsetting FDI from the dataframe (and printing only the first three entries):
+```{r}
+fdi <- Europee24_Italia_df %>%
+  filter(DESCLISTA == "FRATELLI D'ITALIA", VOTANTI > 0)
+
+head(fdi, n=3)
+```
+
+```{r}
+fdi_mun_italy <- fdi %>%
+  summarise(
+    vote_share = sum(NUMVOTI, na.rm = TRUE) / sum(Europee24_Italia_df$NUMVOTI, na.rm = TRUE)
+  ) %>%
+  mutate(
+    vote_share_pct = vote_share * 100)
+
+fdi_mun_italy
+```
+This is the **FDI voting share average of a typical Italian municipality** (so, national average but at municipality level, because the dataset of interest is ***municipality-centered***)
+
+## FDI by province
+
+FDI voting share across all Italian provinces of the dataset (I print only the first three entries for convenience):
+
+sum(NUMVOTI) / sum(VOTANTI) = real weight of province/comune or any territorial unit
+
+```{r}
+library(dplyr)
+# Totale voti validi per comune (tutte le liste) per valid votes per denominatore vote share
+total_valid_votes_by_province <- Europee24_Italia_df %>%
+  group_by(DESCPROVINCIA) %>%
+  summarise(
+    total_valid_votes = sum(NUMVOTI, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+fdi_by_province <- fdi %>%
+  group_by(DESCPROVINCIA) %>%
+  summarise(
+    fdi_votes = sum(NUMVOTI, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(total_valid_votes_by_province, by = "DESCPROVINCIA") %>%
+  mutate(
+    vote_share_pct = 100 * fdi_votes / total_valid_votes
+  )
+
+head(fdi_by_province, n = 10)
+```
+
+## FDI by comune (at municipal level)
+
+FDI voting share across all Italian muncipalities of the dataset (I print only the first three entries for convenience):
+```{r}
+# Totale voti validi per comune (tutte le liste) per valid votes per denominatore vote share
+total_valid_votes_by_comune <- Europee24_Italia_df %>%
+  group_by(DESCCOMUNE) %>%
+  summarise(
+    total_valid_votes = sum(NUMVOTI, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Voti FDI per comune
+fdi_by_comune <- fdi %>%
+  group_by(DESCCOMUNE) %>%
+  summarise(
+    fdi_votes = sum(NUMVOTI, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(total_valid_votes_by_comune, by = "DESCCOMUNE") %>%
+  mutate(
+    vote_share_pct = 100 * fdi_votes / total_valid_votes
+  )
+
+head(fdi_by_comune, n = 10)
+```
+
+## FDI in Rome
+
+FDI vote share in the province/città metropolitana of Rome:
+```{r}
+fdi_rome_province <- fdi_by_province %>%
+  filter(DESCPROVINCIA == "ROMA")
+
+fdi_rome_province
+```
+FDI vote share in the municipality of Rome:
+
+```{r}
+fdi_rome_comune <- fdi_by_comune %>%
+  filter(DESCCOMUNE == "ROMA")
+
+fdi_rome_comune
+```
+It is interesting to note how FDI voting share within **the province of Rome** is **above** of Rome as municipality and the average of all Italian municipalities.
+
+## FDI mapping
+
+reading the names on fdi_by_province
+```{r}
+names(fdi_by_province)
+```
+
+reading the shapefiles of: "confini amministrativi 2024" from the ISTAT website to attempt our ***province mapping***
+```{r}
+library(sf)
+
+prov_shape <- st_read("~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/ProvCM01012024")
+```
+```{r}
+names(prov_shape)
+```
+```{r}
+library(sf)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+# Reading Shapefile provinces (from ISTAT)
+prov_shape_clean <- st_read("~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/ProvCM01012024") %>%
+  mutate(
+    # se DEN_PROV è "-", usa DEN_CM (es. Torino, Roma...)
+    join_name = if_else(DEN_PROV == "-", DEN_CM, DEN_PROV),
+    # normalizza (maiuscolo + spazi sistemati)
+    join_name = str_squish(str_to_upper(join_name))
+  )
+
+# Cleaning FDI by province
+fdi_by_province_clean <- fdi_by_province %>%
+  mutate(
+    join_name = str_squish(str_to_upper(DESCPROVINCIA)),
+    # fixing mismatch
+    join_name = case_when(
+      join_name == "REGGIO NELL' EMILIA" ~ "REGGIO NELL'EMILIA",
+      join_name == "MASSA-CARRARA"       ~ "MASSA CARRARA",
+      join_name == "REGGIO EMILIA"       ~ "REGGIO NELL'EMILIA",
+      join_name == "REGGIO CALABRIA"     ~ "REGGIO DI CALABRIA",
+      TRUE ~ join_name
+    )
+  ) %>%
+  select(join_name, vote_share_pct)
+
+# Left Join shape files and fdi dataframe
+fdi_by_province_map <- left_join(prov_shape_clean, fdi_by_province_clean, by = "join_name")
+
+# check (should be 0 otherwise grey areas in the map)
+sum(is.na(fdi_by_province_map$vote_share_pct))
+
+# Plot
+fdi_by_province_plot <- ggplot(fdi_by_province_map) +
+  geom_sf(aes(fill = vote_share_pct), color = "white", linewidth = 0.1) +
+  scale_fill_distiller(palette = "PuBu", direction = 1) +
+  labs(
+    title = "FDI vote share by province (EU elections 2024)",
+    fill  = "FDI vote share (%)"
+  ) +
+  theme_bw()
+
+# Save plot
+ggsave(file.path(path_out_maps, "fdi_vote_share_province_EU2024.pdf"),
+       plot = fdi_by_province_plot,
+       width = 8,
+       height = 10)
+
+# Print the map in R:
+fdi_by_province_plot
+```
+```{r}
+library(patchwork)
+
+compare_turnout_fdi_plot <-
+  (
+    (turnout_by_province_plot + labs(title = NULL)) |
+    (fdi_by_province_plot + labs(title = NULL))
+  ) +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "Turnout & FDI by province (EU 2024)") &
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 10),
+    legend.text  = element_text(size = 9),
+    plot.margin  = margin(5, 5, 5, 5)
+  )
+
+compare_turnout_fdi_plot
+```
+
+# Lega vote share
+
+```{r}
+lega <- Europee24_Italia_df %>%
+  filter(DESCLISTA == "LEGA SALVINI PREMIER", VOTANTI > 0)
+
+head(lega, n=3)
+```
+```{r}
+lega_mun_italy <- lega %>%
+  summarise(
+    lega_votes = sum(NUMVOTI, na.rm = TRUE)
+  ) %>%
+  mutate(
+    total_valid_votes = sum(Europee24_Italia_df$NUMVOTI, na.rm = TRUE),
+    vote_share = lega_votes / total_valid_votes,
+    vote_share_pct = vote_share * 100
+  )
+
+lega_mun_italy
+```
+## Lega by Province
+
+```{r}
+lega_by_province <- lega %>%
+  group_by(DESCPROVINCIA) %>%
+  summarise(
+    lega_votes = sum(NUMVOTI, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(total_valid_votes_by_province, by = "DESCPROVINCIA") %>%
+  mutate(
+    vote_share_pct = 100 * lega_votes / total_valid_votes
+  )
+
+head(lega_by_province, n = 10)
+```
+## Lega by Comune (at Municipal Level)
+
+```{r}
+lega_by_comune <- lega %>%
+  group_by(DESCCOMUNE) %>%
+  summarise(
+    lega_votes = sum(NUMVOTI, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(total_valid_votes_by_comune, by = "DESCCOMUNE") %>%
+  mutate(
+    vote_share_pct = 100 * lega_votes / total_valid_votes
+  )
+
+head(lega_by_comune, n = 10)
+```
+## Lega in Rome
+
+Lega vote share in the province/città metropolitana of Rome:
+
+```{r}
+lega_rome_province <- lega_by_province %>%
+  filter(DESCPROVINCIA == "ROMA")
+
+lega_rome_province
+```
+
+Lega vote share in the municipality of Rome (comune di Roma):
+
+```{r}
+lega_rome_comune <- lega_by_comune %>%
+  filter(DESCCOMUNE == "ROMA")
+
+lega_rome_comune
+```
+## Lega mapping
+
+```{r}
+library(sf)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+# Reading Shapefile provinces (from ISTAT)
+prov_shape_clean <- st_read("~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/ProvCM01012024") %>%
+  mutate(
+    # se DEN_PROV è "-", usa DEN_CM (es. Torino, Roma...)
+    join_name = if_else(DEN_PROV == "-", DEN_CM, DEN_PROV),
+    # normalizza (maiuscolo + spazi sistemati)
+    join_name = str_squish(str_to_upper(join_name))
+  )
+
+# Cleaning Lega by province
+lega_by_province_clean <- lega_by_province %>%
+  mutate(
+    join_name = str_squish(str_to_upper(DESCPROVINCIA)),
+    # fixing mismatch
+    join_name = case_when(
+      join_name == "REGGIO NELL' EMILIA" ~ "REGGIO NELL'EMILIA",
+      join_name == "MASSA-CARRARA"       ~ "MASSA CARRARA",
+      join_name == "REGGIO EMILIA"       ~ "REGGIO NELL'EMILIA",
+      join_name == "REGGIO CALABRIA"     ~ "REGGIO DI CALABRIA",
+      TRUE ~ join_name
+    )
+  ) %>%
+  select(join_name, vote_share_pct)
+
+# Left Join shape files and fdi dataframe
+lega_by_province_map <- left_join(prov_shape_clean, lega_by_province_clean, by = "join_name")
+
+# check (should be 0 otherwise grey areas in the map)
+sum(is.na(lega_by_province_map$vote_share_pct))
+
+# Plot
+lega_by_province_plot <- ggplot(lega_by_province_map) +
+  geom_sf(aes(fill = vote_share_pct), color = "white", linewidth = 0.1) +
+  scale_fill_distiller(palette = "BuGn", direction = 1) +
+  labs(
+    title = "Lega vote share by province (EU elections 2024)",
+    fill = "Lega vote share (%)"
+  ) +
+  theme_bw()
+
+# Save plot
+ggsave(file.path(path_out_maps, "lega_vote_share_province_EU2024.pdf"),
+       plot = lega_by_province_plot,
+       width = 8,
+       height = 10)
+
+# Print the map in R:
+
+lega_by_province_plot
+```
+```{r}
+library(patchwork)
+
+compare_turnout_lega_plot <-
+  (
+    (turnout_by_province_plot + labs(title = NULL)) |
+    (lega_by_province_plot + labs(title = NULL))
+  ) +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "Turnout & Lega by province (EU 2024)") &
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 10),
+    legend.text  = element_text(size = 9),
+    plot.margin  = margin(5, 5, 5, 5)
+  )
+
+compare_turnout_lega_plot
+```
+
+### Lega and FDI comparison in maps across IT provinces
+
+```{r}
+library(patchwork)
+
+compare_fdi_lega_plot <-
+  (
+    (fdi_by_province_plot + labs(title = NULL)) |
+    (lega_by_province_plot + labs(title = NULL))
+  ) +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "FDI vs Lega by province (EU 2024)") &
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 10),
+    legend.text  = element_text(size = 9),
+    plot.margin  = margin(5, 5, 5, 5)
+  )
+
+compare_fdi_lega_plot
+```
+
+# PRPP in Italy
+
+PRRP vote share = FdI + Lega vote share combined.
+
+Below the combined vote shares at various unit of analysis.
+
+First, the PRRP vote share at national level weigheted at municipality level.
+
+```{r}
+prrp_mun_italy <- fdi_mun_italy %>%
+  mutate(prrp_vote_share_pct = vote_share_pct + lega_mun_italy$vote_share_pct) %>%
+  select(prrp_vote_share_pct)
+
+prrp_mun_italy
+```
+## PRRP by Province
+
+PRRP = FdI + Lega , so: Combined Lega–FDI vote share by PROVINCE / CITTA METROPOLITANA (ofc rightly weighted)
+
+```{r}
+prrp_by_province <- left_join(
+  fdi_by_province,
+  lega_by_province,
+  by = "DESCPROVINCIA",
+  suffix = c("_fdi", "_lega")
+) %>%
+  mutate(
+    prrp_vote_share_pct = vote_share_pct_fdi + vote_share_pct_lega
+  ) %>%
+  select(DESCPROVINCIA, prrp_vote_share_pct)
+
+head(prrp_by_province, n = 10)
+```
+### How to find the province with highest PRRP vote share across Italian provinces
+```{r}
+max_prrp_prov_it <- max(prrp_by_province$prrp_vote_share_pct, na.rm = TRUE)
+
+highest_prrp_prov_it <- prrp_by_province %>%
+  filter(prrp_vote_share_pct == max_prrp_prov_it)
+
+highest_prrp_prov_it
+```
+
+### How to save a table from R in my computer
+```{r}
+write.csv2(prrp_by_province,
+           "prrp_by_province_R.csv",
+           row.names = FALSE)
+```
+
+## PRRP by Comune
+
+PRPP = FdI + Lega , so: Combined Lega–FDI vote share by COMUNE
+
+```{r}
+prrp_by_comune <- left_join(
+  fdi_by_comune,
+  lega_by_comune,
+  by = "DESCCOMUNE",
+  suffix = c("_fdi", "_lega")
+) %>%
+  mutate(
+    prrp_vote_share_pct = vote_share_pct_fdi + vote_share_pct_lega
+  ) %>%
+  select(DESCCOMUNE, prrp_vote_share_pct)
+
+head(prrp_by_comune, n = 10)
+```
+
+## Mapping PRRP in Italy
+
+```{r}
+library(sf)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+# Reading Shapefile provinces (from ISTAT)
+prov_shape_clean <- st_read("~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/ProvCM01012024") %>%
+  mutate(
+    # se DEN_PROV è "-", usa DEN_CM (es. Torino, Roma...)
+    join_name = if_else(DEN_PROV == "-", DEN_CM, DEN_PROV),
+    # normalizza (maiuscolo + spazi sistemati)
+    join_name = str_squish(str_to_upper(join_name))
+  )
+
+prrp_by_province_clean <- prrp_by_province %>%
+  mutate(
+    join_name = str_squish(str_to_upper(DESCPROVINCIA)),
+    join_name = case_when(
+      join_name == "REGGIO NELL' EMILIA" ~ "REGGIO NELL'EMILIA",
+      join_name == "MASSA-CARRARA"       ~ "MASSA CARRARA",
+      join_name == "REGGIO EMILIA"       ~ "REGGIO NELL'EMILIA",
+      join_name == "REGGIO CALABRIA"     ~ "REGGIO DI CALABRIA",
+      TRUE ~ join_name
+    )
+  ) %>%
+  select(join_name, prrp_vote_share_pct)
+
+
+prrp_by_province_map <- left_join(prov_shape_clean, prrp_by_province_clean, by = "join_name")
+
+
+sum(is.na(prrp_by_province_map$prrp_vote_share_pct))
+
+
+prrp_by_province_plot <- ggplot(prrp_by_province_map) +
+  geom_sf(aes(fill = prrp_vote_share_pct), color = "white", linewidth = 0.1) +
+  scale_fill_distiller(palette = "BuPu", direction = 1) +
+  labs(
+    title = "PRRPs vote share by province (EU elections 2024)",
+    fill = "PRRPs vote share (%)"
+  ) +
+  theme_bw()
+
+
+ggsave(file.path(path_out_maps, "prrp_vote_share_province_EU2024.pdf"),
+       plot = prrp_by_province_plot,
+       width = 8,
+       height = 10)
+
+# Print the map in R:
+
+prrp_by_province_plot
+```
+
+## Comparing PRPPs and Turnout:
+
+```{r}
+library(patchwork)
+
+compare_turnout_prrp_plot <-
+  (
+    (turnout_by_province_plot + labs(title = NULL)) |
+    (prrp_by_province_plot + labs(title = NULL))
+  ) +
+  plot_layout(guides = "collect") +
+  plot_annotation(title = "Turnout & PRRPs by province (EU 2024)") &
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 10),
+    legend.text  = element_text(size = 9),
+    plot.margin  = margin(5, 5, 5, 5)
+  )
+
+compare_turnout_prrp_plot
+```
+
+# Barplots
+
+To conclude this partial project, let's create some additional barplots based on descriptive statistics.
+
+First, I sort the dataframe based on the top 10 highest FDI vote shares recorded across Italian provinces.
+```{r}
+fdi_by_province_sorted<-fdi_by_province[order(-fdi_by_province$vote_share_pct),]
+head(fdi_by_province_sorted, n=10)
+```
+Significant for the research focused on Rome province: Rome is among the top 10 provinces with the highest FDI vote share across the Italian provinces of the dataset!
+
+This is the barplot:
+```{r}
+fdi_top10_province<-head(fdi_by_province_sorted, n=10)
+
+figure_fdi_top10_province<-ggplot(fdi_top10_province, aes(x = reorder(DESCPROVINCIA, -vote_share_pct), 
+                                     y = vote_share_pct)) + 
+  geom_bar(stat="identity")+
+  coord_cartesian(ylim = c(30,45))+
+  geom_text(data=fdi_top10_province,
+  aes(label = round(vote_share_pct,2), 
+        y = vote_share_pct, 
+        vjust = 2), 
+  colour = "white", size=2)+
+  xlab("Provincia") + ylab("FDI vote share")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+figure_fdi_top10_province
+
+```
+I may do the same at the municipality level, or reproduce the turnout instead of the FDI vote share.
+I think this is may be very useful to graphically display data even without computing correlation or regression (if I decide not to pursue in that direction).
+
+```{r}
+fdi_by_comune_sorted<-fdi_by_comune[order(-fdi_by_comune$vote_share_pct),]
+
+fdi_top10_comune<-head(fdi_by_comune_sorted, n=10)
+
+figure_fdi_top10_comune<-ggplot(fdi_top10_comune, aes(x = reorder(DESCCOMUNE, -vote_share_pct), 
+                                     y = vote_share_pct)) + 
+  geom_bar(stat="identity")+
+  coord_cartesian(ylim = c(55,65))+
+  geom_text(data=fdi_top10_comune,
+  aes(label = round(vote_share_pct,2), 
+        y = vote_share_pct, 
+        vjust = 2), 
+  colour = "white", size=2)+
+  xlab("Comune") + ylab("FDI vote share")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+figure_fdi_top10_comune
+```
+
+### Barplots (turnout)
+
+```{r}
+turnout_by_province_sorted<-turnout_by_province[order(-turnout_by_province$turnout_pct),]
+
+turnout_top10_province<-head(turnout_by_province_sorted, n=10)
+
+figure_turnout_top10_province<-ggplot(turnout_top10_province, aes(x = reorder(DESCPROVINCIA, -turnout_pct), 
+                                     y = turnout_pct)) + 
+  geom_bar(stat="identity")+
+  coord_cartesian(ylim = c(50,70))+
+  geom_text(data=turnout_top10_province,
+  aes(label = round(turnout_pct,2), 
+        y = turnout_pct, 
+        vjust = 2), 
+  colour = "white", size=2)+
+  xlab("Provincia") + ylab("Turnout")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+figure_turnout_top10_province
+```
+
+```{r}
+turnout_by_comune_sorted<-turnout_by_comune[order(-turnout_by_comune$turnout_pct),]
+
+turnout_top10_comune<-head(turnout_by_comune_sorted, n=10)
+
+figure_turnout_top10_comune<-ggplot(turnout_top10_comune, aes(x = reorder(DESCCOMUNE, -turnout_pct), 
+                                     y = turnout_pct)) + 
+  geom_bar(stat="identity")+
+  coord_cartesian(ylim = c(78,95))+
+  geom_text(data=turnout_top10_comune,
+  aes(label = round(turnout_pct,2), 
+        y = turnout_pct, 
+        vjust = 2), 
+  colour = "white", size=2)+
+  xlab("Comune") + ylab("Turnout")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+figure_turnout_top10_comune
+```
+### Turnout-FDI vote share Province Comparison
+
+```{r}
+library(gridExtra)
+
+grid.arrange(
+  figure_fdi_top10_province,
+  figure_turnout_top10_province,
+  ncol = 2)
+```
+### Turnout-FDI vote share Municipality Comparison
+
+```{r}
+grid.arrange(
+  figure_fdi_top10_comune,
+  figure_turnout_top10_comune,
+  ncol = 2)
+```
+
+# Bivariate Analysis: Correlations between Turnout & Vote Share at Provincial Level 
+
+## Turnout and FDI
+
+Now we can directly observe and compare the turnout and FDI vote share at the territorial unit we are interested in.
+
+For now, let's choose at province level by performing a left join of the two datasets of turnout and FDI vote share previously created:
+```{r}
+province_merged_fdi <- left_join(turnout_by_province, fdi_by_province, by = c("DESCPROVINCIA"="DESCPROVINCIA")) %>%
+  transmute(
+    DESCPROVINCIA,
+    turnout_pct = turnout_pct,
+    fdi_vote_share_pct = vote_share_pct)
+
+head(province_merged_fdi, n=10)
+```
+To make it more readable and straightforward, I inserted only the % of both turnout and FDI vote share.
+
+### Scatterplot of Turnout-FDI vote share (Province-level)
+
+```{r}
+library(ggplot2)
+
+province_merged_fdi_fig1 <- ggplot(province_merged_fdi, mapping = aes(x=turnout_pct, y=fdi_vote_share_pct)) +
+  geom_point()+
+  xlab("Turnout Provinces") + ylab("FDI Vote Share in Provinces")+
+  ggtitle("Turnout and Voting Pattern")+
+  theme_bw()+
+  geom_smooth(method = "lm", se=FALSE)+
+  scale_x_continuous(breaks=seq(30, 70, by = 10), limits = c(30,70))+
+  scale_y_continuous(breaks=seq(10, 50, by = 10), limits = c(10,50))
+
+province_merged_fdi_fig1
+```
+This scatterplot reveals a **weak-to-moderate positive association** between turnout and FDI vote share at the provincial level, as the fitting line is slightly upward but datapoints widely scattered.
+
+At the same time, the wide dispersion of observations around the regression line suggests that turnout alone explains only a limited portion of the variation in FDI vote share across provinces.
+
+So, turnout alone *cannot* be considered as an important variable to explain the variation in FDI voting pattern across Italian provinces, and both variables are weakly associated.
+
+(to see in detail as I am not entirely familiar with the precise terminology)
+
+### Correlation
+
+Since the scatter plot suggests a slightly positive, moderate but noisy association (with widely dispersed data points) between turnout and FDI vote share at the provincial level, we quantify this relationship using Pearson’s correlation coefficient (r)
+
+```{r}
+cor(
+  province_merged_fdi$turnout_pct,
+  province_merged_fdi$fdi_vote_share_pct,
+  method = "pearson",
+  use = "complete.obs")
+```
+An r of 0.50 indicates a ***moderate positive linear association*** (between r=1 as perfect positive correlation and r=0 as no linear correlation): provinces with higher turnout tend to display higher FDI vote shares, although the correlation is not sufficiently clear because not perfect linear (r is low) and noisy (many datapoints dispersed and widely scattered).
+
+### Statistical significance
+
+```{r}
+cor.test(
+  province_merged_fdi$turnout_pct,
+  province_merged_fdi$fdi_vote_share_pct,
+  method = "pearson")
+```
+From this test we can identify:
+- r is 0.4954528 (as explained earlier);
+- p-value is 1.907 × 10⁻⁹ (p < 0.001), which implies that the correlation is highly statistically significant;
+
+Therefore, although the **correlation is moderate in strength, it is statistically robust**, suggesting that higher turnout is moderately but systematically (and statistically significant) associated with higher FDI vote share across Italian provinces.
+
+### Definitive scatterplot
+
+Let's graph a more detailed scatterplot with the new findings and I will try to insert Rome and Milan (as the major and the most politically significant provinces in Italy) to compare them with the other provinces of the scatterplot.
+
+```{r}
+rome_milan_province_merged_fdi <- province_merged_fdi %>%
+  dplyr::filter(DESCPROVINCIA %in% c("ROMA", "MILANO"))
+
+rome_milan_province_merged_fdi
+```
+This is to show the differences in terms of turnout and FDI vote share between Rome and Milan:
+- in terms of turnout, Milan is slightly higher than Rome (as province);
+- in terms of FDI vote share, Rome is moderately and significantly higher than Milan (always as province).
+
+```{r}
+library(ggpubr)
+library(ggrepel)
+
+province_merged_fdi_fig2 <- ggplot(
+  province_merged_fdi,
+  aes(x = turnout_pct, y = fdi_vote_share_pct)
+) +
+geom_point(size = 2.5, alpha = 0.7) +
+geom_smooth(method = "lm", se = FALSE, color = "steelblue", linewidth = 1) +
+  
+stat_cor(
+  method = "pearson",
+  aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),
+  label.x.npc = "left",
+  label.y.npc = "top",
+  size = 4
+  ) +
+  
+  geom_label_repel(
+    data = rome_milan_province_merged_fdi,
+    aes(
+      x = turnout_pct,
+      y = fdi_vote_share_pct,
+      label = DESCPROVINCIA
+    ),
+    inherit.aes = FALSE,
+    size = 4,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    segment.size = 0.6,
+    force = 2,
+    seed = 123
+  ) +
+  
+  labs(
+    x = "Turnout (Provinces)",
+    y = "FDI Vote Share (Provinces)",
+    title = "Turnout and FDI Vote Share at the Provincial Level"
+  ) +
+  
+  theme_bw() +
+  scale_x_continuous(breaks = seq(30, 70, 10)) +
+  scale_y_continuous(breaks = seq(10, 50, 10)) +
+  coord_cartesian(xlim = c(30, 70), ylim = c(10, 50))
+
+province_merged_fdi_fig2
+```
+So, this new scatterplot is more precise as it shows the r Pearson correlation and the p value (above) as they indicate the direction and the statistical significant of the correlation.
+
+It also indicates the precise location of the provinces of Rome and Milan within all the provinces of the dataset.
+- Rome lies above the regression line, so FDI’s vote share in Rome exceeds what would be predicted by turnout alone.
+- Milan, by contrast, lies close to the fitted regression line, suggesting that its FDI vote share is well predicted by turnout and closely reflects the average pattern of all Italian provinces.
+
+Overall, the substantial dispersion of data points around the regression line indicates marked heterogeneity across provinces. This “noisy” pattern (widely dispersed observations) coexists with a statistically significant and moderately positive association between turnout and FDI vote share at provincial level, from the 2024 European elections.
+
+### R²
+
+As we said, the substantial dispersion of observations around the regression line indicates that turnout alone accounts for ***only part*** of the observed variation. But ***how much?*** 
+```{r}
+model <- lm(fdi_vote_share_pct ~ turnout_pct, data = province_merged_fdi)
+summary(model)$r.squared
+```
+The estimated **R²** suggests that **approximately 25% of the cross-provincial variation in FDI vote share** is associated with turnout differences, leaving most of the vote share variation to be explained by other political, social, and contextual factors that i will examine in the multivariate analysis.
+
+## Turnout and Lega
+
+```{r}
+province_merged_lega <- left_join(turnout_by_province, lega_by_province, by = c("DESCPROVINCIA"="DESCPROVINCIA")) %>%
+  transmute(
+    DESCPROVINCIA,
+    turnout_pct = turnout_pct,
+    lega_vote_share_pct = vote_share_pct)
+
+head(province_merged_lega, n=10)
+```
+The difference in turnout and Lega vote share in Rome and Milan provinces (they are actually Città Metropolitane i.e: major provinces)
+
+```{r}
+rome_milan_province_merged_lega <- province_merged_lega %>%
+  dplyr::filter(DESCPROVINCIA %in% c("ROMA", "MILANO"))
+
+rome_milan_province_merged_lega
+```
+Definitive scatterplot for the correlation:
+
+```{r}
+library(ggpubr)
+library(ggrepel)
+
+province_merged_lega_fig1 <- ggplot(
+  province_merged_lega,
+  aes(x = turnout_pct, y = lega_vote_share_pct)
+) +
+geom_point(size = 2.5, alpha = 0.7) +
+geom_smooth(method = "lm", se = FALSE, color = "forestgreen", linewidth = 1) +
+  
+stat_cor(
+  method = "pearson",
+  aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),
+  label.x.npc = "left",
+  label.y.npc = "top",
+  size = 4
+  ) +
+  
+  geom_label_repel(
+    data = rome_milan_province_merged_lega,
+    aes(
+      x = turnout_pct,
+      y = lega_vote_share_pct,
+      label = DESCPROVINCIA
+    ),
+    inherit.aes = FALSE,
+    size = 4,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    segment.size = 0.6,
+    force = 2,
+    seed = 123
+  ) +
+  
+  labs(
+    x = "Turnout (Provinces)",
+    y = "Lega Vote Share (Provinces)",
+    title = "Turnout and Lega Vote Share at the Provincial Level"
+  ) +
+  
+  theme_bw() +
+  scale_x_continuous(breaks = seq(30, 70, 10)) +
+  scale_y_continuous(breaks = seq(0, 20, 5)) +
+  coord_cartesian(xlim = c(30, 70), ylim = c(0, 25))
+
+province_merged_lega_fig1
+```
+In one passage it would be:
+
+```{r}
+province_merged_lega_fig1 <- ggplot(
+  province_merged_lega,
+  aes(x = turnout_pct, y = lega_vote_share_pct)
+) +
+geom_point(size = 2.5, alpha = 0.7) +
+geom_smooth(method = "lm", se = FALSE, color = "forestgreen", linewidth = 1) +
+  
+stat_cor(
+  method = "pearson",
+  aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),
+  label.x.npc = "left",
+  label.y.npc = "top",
+  size = 4
+  ) +
+  
+  geom_label_repel(
+    data = province_merged_lega %>%
+      filter(DESCPROVINCIA %in% c("ROMA", "MILANO")),
+    aes(
+      x = turnout_pct,
+      y = lega_vote_share_pct,
+      label = DESCPROVINCIA
+    ),
+    inherit.aes = FALSE,
+    size = 4,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    segment.size = 0.6,
+    force = 2,
+    seed = 123
+  ) +
+  
+  labs(
+    x = "Turnout (Provinces)",
+    y = "Lega Vote Share (Provinces)",
+    title = "Turnout and Lega Vote Share at the Provincial Level"
+  ) +
+  
+  theme_bw() +
+  scale_x_continuous(breaks = seq(30, 70, 10)) +
+  scale_y_continuous(breaks = seq(0, 20, 5)) +
+  coord_cartesian(xlim = c(30, 70), ylim = c(0, 25))
+
+province_merged_lega_fig1
+```
+
+
+```{r}
+cor.test(
+  province_merged_lega$turnout_pct,
+  province_merged_lega$lega_vote_share_pct,
+  method = "pearson")
+```
+Interpretation:
+
+-here the correlation is 0.2015939 which is positive but weak. 
+- the p-value indicates statistical significance because 0.03732 < 0.05 (but not highly significant as the correlation btw turnout and FdI at province level)
+
+```{r}
+model <- lm(lega_vote_share_pct ~ turnout_pct, data = province_merged_lega)
+summary(model)$r.squared
+```
+
+Turnout is positively but weakly correlated with Lega vote share at the provincial level and statistically significant (r ≈ 0.20 ; p ≈ 0.037). The model explains only about 4% of the variation in Lega electoral support, suggesting that turnout plays a limited role in explaining Lega’s territorial performance.
+
+Turnout is positively correlated with the vote share of both Fratelli d’Italia and the Lega at the provincial level, but the strength of the relationship differs substantially. 
+
+For Fratelli d’Italia, the correlation is moderate (r ≈ 0.50) and highly statistically significant (p < 0.001), with turnout explaining about 25% of the variation in provincial vote share (R² ≈ 0.25). 
+
+In contrast, the relationship between turnout and the Lega’s vote share is much weaker (r ≈ 0.20) and less significant at the 5% level (p ≈ 0.037), with turnout accounting for only about 4% of the variation (R² ≈ 0.04). 
+
+Overall, turnout appears to be substantially more associated with the territorial variation of Fratelli d’Italia’s electoral performance than with that of the Lega.
+
+## Turnout and PRRPs
+
+```{r}
+library(dplyr)
+
+province_merged_prrp <- left_join(turnout_by_province, prrp_by_province, by = c("DESCPROVINCIA"="DESCPROVINCIA")) %>%
+  transmute(
+    DESCPROVINCIA,
+    turnout_pct = turnout_pct,
+    prrp_vote_share_pct = prrp_vote_share_pct)
+
+head(province_merged_prrp, n=10)
+```
+
+```{r}
+library(ggpubr)
+library(ggrepel)
+
+province_merged_prrp_fig1 <- ggplot(
+  province_merged_prrp,
+  aes(x = turnout_pct, y = prrp_vote_share_pct)
+) +
+geom_point(size = 2.5, alpha = 0.7) +
+geom_smooth(method = "lm", se = FALSE, color = "mediumpurple", linewidth = 1) +
+  
+stat_cor(
+  method = "pearson",
+  aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),
+  label.x.npc = "left",
+  label.y.npc = "top",
+  size = 4
+  ) +
+  
+  geom_label_repel(
+    data = province_merged_prrp %>%
+      filter(DESCPROVINCIA %in% c("ROMA", "MILANO")),
+    aes(
+      x = turnout_pct,
+      y = prrp_vote_share_pct,
+      label = DESCPROVINCIA
+    ),
+    inherit.aes = FALSE,
+    size = 4,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    segment.size = 0.6,
+    force = 2,
+    seed = 123
+  ) +
+  
+  labs(
+    x = "Turnout (Provinces)",
+    y = "PRRP Vote Share (Provinces)",
+    title = "Turnout and PRRP Vote Share at the Provincial Level"
+  ) +
+  
+  theme_bw() +
+  scale_x_continuous(breaks = seq(30, 70, 10)) +
+  scale_y_continuous(breaks = seq(20, 60, 10)) +
+  coord_cartesian(xlim = c(30, 70), ylim = c(20, 60))
+
+province_merged_prrp_fig1
+```
+
+```{r}
+cor.test(
+  province_merged_prrp$turnout_pct,
+  province_merged_prrp$prrp_vote_share_pct
+)
+```
+```{r}
+model_prrp <- lm(prrp_vote_share_pct ~ turnout_pct, data = province_merged_prrp)
+summary(model_prrp)$r.squared
+```
+
+When combining the vote shares of Fratelli d’Italia and the Lega to construct the PRRP vote share, the relationship with turnout becomes stronger than for the Lega alone. The correlation between turnout and the combined PRRP vote share is positive and moderate (r ≈ 0.45) and highly statistically significant (p ≈ 1.34 × 10⁻⁶). The regression model explains about 20% of the variation in PRRP vote share across provinces (R² ≈ 0.20). This suggests that turnout is meaningfully associated with the territorial variation of the populist radical right vote, although the relationship is largely driven by Fratelli d’Italia rather than by the Lega.
+
+This pattern is consistent with the recent transformation of the Italian radical right, where Fratelli d’Italia has expanded its electoral support across territories, while the Lega remains more territorially anchored and less strongly associated with turnout variation.
+
+### Saiving the plots (correlations)
+```{r}
+
+province_merged_prrp_fig01 <- ggplot(
+  province_merged_prrp,
+  aes(x = turnout_pct, y = prrp_vote_share_pct)
+) +
+geom_point(size = 2.5, alpha = 0.7) +
+geom_smooth(method = "lm", se = FALSE, color = "mediumpurple", linewidth = 1) +
+  
+stat_cor(
+  method = "pearson",
+  aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),
+  label.x = 31,
+  label.y = 59,
+  size = 4
+  ) +
+  
+  geom_label_repel(
+    data = province_merged_prrp %>%
+      filter(DESCPROVINCIA %in% c("ROMA", "MILANO")),
+    aes(
+      x = turnout_pct,
+      y = prrp_vote_share_pct,
+      label = DESCPROVINCIA
+    ),
+    inherit.aes = FALSE,
+    size = 4,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    segment.size = 0.6,
+    force = 2,
+    seed = 123
+  ) +
+  
+  labs(
+    x = "Turnout (Provinces and Metropolitan Cities)",
+    y = "PRRP Vote Share (Provinces and Metropolitan Cities)",
+    title = "Turnout and PRRP Vote Share at the Provincial and Metropolitan Level"
+  ) +
+  
+  theme_bw() +
+  scale_x_continuous(breaks = seq(30, 70, 10)) +
+  scale_y_continuous(breaks = seq(20, 60, 10)) +
+  coord_cartesian(xlim = c(30, 70), ylim = c(20, 60))
+
+province_merged_prrp_fig01
+
+# Save plot for slides
+ggsave(
+  file.path(path_out_scatter, "corr_prrp_province_EU2024.png"),
+  plot = province_merged_prrp_fig01,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
+# Save plot also as PDF
+ggsave(
+  file.path(path_out_scatter, "corrt_prrp_province_EU2024.pdf"),
+  plot = province_merged_prrp_fig01,
+  width = 8,
+  height = 6
+)
+```
+
+```{r}
+province_merged_fdi_fig01 <- ggplot(
+  province_merged_fdi,
+  aes(x = turnout_pct, y = fdi_vote_share_pct)
+) +
+geom_point(size = 2.5, alpha = 0.7) +
+geom_smooth(method = "lm", se = FALSE, color = "steelblue", linewidth = 1) +
+  
+stat_cor(
+  method = "pearson",
+  aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),
+  label.x = 31,
+  label.y = 59,
+  size = 4
+  ) +
+  
+  geom_label_repel(
+    data = rome_milan_province_merged_fdi,
+    aes(
+      x = turnout_pct,
+      y = fdi_vote_share_pct,
+      label = DESCPROVINCIA
+    ),
+    inherit.aes = FALSE,
+    size = 4,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    segment.size = 0.6,
+    force = 2,
+    seed = 123
+  ) +
+  
+  labs(
+    x = "Turnout (Provinces and Metropolitan Cities)",
+    y = "FDI Vote Share (Provinces and Metropolitan Cities)",
+    title = "Turnout and FDI Vote Share at the Provincial and Metropolitan Level"
+  ) +
+  
+  theme_bw() +
+  scale_x_continuous(breaks = seq(30, 70, 10)) +
+  scale_y_continuous(breaks = seq(10, 50, 10)) +
+  coord_cartesian(xlim = c(30, 70), ylim = c(10, 50))
+
+province_merged_fdi_fig01
+
+# Save plot for slides
+ggsave(
+  file.path(path_out_scatter, "corr_fdi_province_EU2024.png"),
+  plot = province_merged_fdi_fig01,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
+# Save plot also as PDF
+ggsave(
+  file.path(path_out_scatter, "corrt_fdi_province_EU2024.pdf"),
+  plot = province_merged_fdi_fig01,
+  width = 8,
+  height = 6
+)
+```
+
+```{r}
+province_merged_lega_fig01 <- ggplot(
+  province_merged_lega,
+  aes(x = turnout_pct, y = lega_vote_share_pct)
+) +
+geom_point(size = 2.5, alpha = 0.7) +
+geom_smooth(method = "lm", se = FALSE, color = "forestgreen", linewidth = 1) +
+  
+stat_cor(
+  method = "pearson",
+  aes(label = paste(..r.label.., ..p.label.., sep = "~`,`~")),
+  label.x = 31,
+  label.y = 59,
+  size = 4
+  ) +
+  
+  geom_label_repel(
+    data = province_merged_lega %>%
+      filter(DESCPROVINCIA %in% c("ROMA", "MILANO")),
+    aes(
+      x = turnout_pct,
+      y = lega_vote_share_pct,
+      label = DESCPROVINCIA
+    ),
+    inherit.aes = FALSE,
+    size = 4,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    segment.size = 0.6,
+    force = 2,
+    seed = 123
+  ) +
+  
+  labs(
+    x = "Turnout (Provinces and Metropolitan Cities)",
+    y = "Lega Vote Share (Provinces and Metropolitan Cities)",
+    title = "Turnout and Lega Vote Share at the Provincial and Metropolitan Level"
+  ) +
+  
+  theme_bw() +
+  scale_x_continuous(breaks = seq(30, 70, 10)) +
+  scale_y_continuous(breaks = seq(0, 20, 5)) +
+  coord_cartesian(xlim = c(30, 70), ylim = c(0, 25))
+
+province_merged_lega_fig01
+
+# Save plot for slides
+ggsave(
+  file.path(path_out_scatter, "corr_lega_province_EU2024.png"),
+  plot = province_merged_lega_fig01,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
+# Save plot also as PDF
+ggsave(
+  file.path(path_out_scatter, "corrt_lega_province_EU2024.pdf"),
+  plot = province_merged_lega_fig01,
+  width = 8,
+  height = 6
+)
+```
+
+
+# Multivariate Analysis: Correlations between Turnout & Vote Share at Provincial Level after controlling for other variables
+
+Let's load the table with the relevant control variables:
+- density population share as proxy for urbanization
+- foreign population share
+- GDP per capita adjusted for ppp
+All variables are at provincial/città metropolitana level.
+
+```{r}
+library(readxl)
+
+path_data <- "~/Desktop/Data Science/Excel & Stats"
+
+data_reg24 <- read_excel("~/Desktop/Data Science/Excel & Stats/Complete_dataset.xlsx",
+  sheet = "data for regression")
+```
+
+```{r}
+glimpse(data_reg24)
+names(data_reg24)
+```
+After checking teh names of the columns, I rename my variables (all from the same file) for the multivariate regression:
+```{r}
+data_reg24_clean <- data_reg24 %>%
+  rename(
+    prrp = `PRRP vote share`,
+    turnout = Turnout,
+    density = Density,
+    foreign_population = `Foreign pop.`,
+    gdp_ppp = `GDP per capita (PPP)`
+  )
+```
+
+## Multivariate regression
+
+Now I can compute the multivariate regression with all the variables from the same files: dependent, independent, control variables.
+
+```{r}
+model_prrp24 <- lm(
+  prrp ~ turnout + density + foreign_population + gdp_ppp,
+  data = data_reg24_clean)
+
+summary(model_prrp24) #this stamps the full output of the multiv regression
+```
+
+Definitive table:
+
+```{r}
+library(modelsummary)
+
+modelsummary(
+  model_prrp24,
+  stars = TRUE,
+  title = "OLS model of PRRP vote share across Italian provinces from 2024 EU Elections")
+```
+
+Here the table is saved as png file.
+
+```{r}
+# install.packages("modelsummary")
+# install.packages("webshot2")
+
+library(modelsummary)
+
+modelsummary(
+  model_prrp24,
+  stars = TRUE,
+  title = "OLS model of PRRP vote share across Italian provinces from 2024 EU Elections",
+output = file.path(path_out_tables, "multiv_regression_table24.png"))
+```
+
+# Municipalities and Rome metropolitan city subset from shapefiles
+
+## Mapping Turnout in all Italian municipalities (from EU 2024 elections)
+
+```{r}
+library(sf)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+# Reading shapefile municipalities (from ISTAT)
+mun_shape_clean <- st_read("~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/Com01012024") %>%
+  mutate(
+    join_name = str_squish(str_to_upper(COMUNE))
+  )
+```
+
+```{r}
+library(sf)
+library(dplyr)
+library(stringr)
+# eval false when render otherwise does not shows maps, and funziona solo se è la primissima riga del chunk che vuoi disattivare.
+
+#| eval: false
+mun_shape <- st_read("~/Desktop/Data Science/R & Stats/Dati_geografici/Limiti01012024/Com01012024")
+
+names(mun_shape)
+glimpse(mun_shape)
+```
+
+```{r}
+mun_shape_clean <- mun_shape %>%
+  mutate(
+    join_name = str_squish(str_to_upper(COMUNE))
+  )
+```
+Standardizzare i nomi nello shapefiles dei comuni
+	•	**str_to_upper()** → mette tutto in maiuscolo
+	•	**str_squish()** → toglie spazi doppi o strani
+	Serve a costruire una versione “standardizzata” dei nomi dei comuni nello shapefile.
+
+Esempio:
+	•	Agliè → AGLIÈ
+	•	Roma → ROMA
+```{r}
+turnout_by_comune_clean <- turnout_by_comune %>%
+  mutate(
+    join_name = str_squish(str_to_upper(DESCCOMUNE))
+  ) %>%
+  select(join_name, turnout_pct)
+```
+Qui, stessa per i dati elettorali dei comuni
+
+```{r}
+setdiff(turnout_by_comune_clean$join_name, mun_shape_clean$join_name)
+setdiff(mun_shape_clean$join_name, turnout_by_comune_clean$join_name)
+```
+Qui confronto i due insiemi con **setdiff**:
+questi sono i nomi che stanno nel dataset elettorale ma non nello shapefile per diversità accenti/apostrofi.
+
+```{r}
+# Cleaning turnout by municipality/comune
+turnout_by_comune_newclean <- turnout_by_comune_clean %>%
+  mutate(
+    # fixing mismatch between electoral data and municipal shapefile: a sx i nomi nei electoral data, a dx i nomi nello shapefile
+    # join_name == "NOME_NEI_DATI_ELETTORALI" ~ "NOME_NELLO_SHAPEFILE"
+    join_name = case_when(
+      join_name == "AGLIE'" ~ "AGLIÈ",
+      join_name == "ALA' DEI SARDI" ~ "ALÀ DEI SARDI",
+      join_name == "ALI'" ~ "ALÌ",
+      join_name == "ALI' TERME" ~ "ALÌ TERME",
+      join_name == "ALME'" ~ "ALMÈ",
+      join_name == "ANTEY-SAINT-ANDRE'" ~ "ANTEY-SAINT-ANDRÉ",
+      join_name == "ARQUA' PETRARCA" ~ "ARQUÀ PETRARCA",
+      join_name == "ARQUA' POLESINE" ~ "ARQUÀ POLESINE",
+      join_name == "ARSIE'" ~ "ARSIÈ",
+      join_name == "BARZANO'" ~ "BARZANÒ",
+      join_name == "BASCAPE'" ~ "BASCAPÈ",
+      join_name == "BASELGA DI PINE'" ~ "BASELGA DI PINÈ",
+      join_name == "BASICO'" ~ "BASICÒ",
+      join_name == "BASTIA MONDOVI'" ~ "BASTIA MONDOVÌ",
+      join_name == "BELVI'" ~ "BELVÌ",
+      join_name == "BIANZE'" ~ "BIANZÈ",
+      join_name == "BIDONI'" ~ "BIDONÌ",
+      join_name == "BRIGNANO FRASCATA" ~ "BRIGNANO-FRASCATA",
+      join_name == "BUDDUSO'" ~ "BUDDUSÒ",
+      join_name == "CALATAFIMI SEGESTA" ~ "CALATAFIMI-SEGESTA",
+      join_name == "CANICATTI'" ~ "CANICATTÌ",
+      join_name == "CANTU'" ~ "CANTÙ",
+      join_name == "CARDE'" ~ "CARDÈ",
+      join_name == "CARRE'" ~ "CARRÈ",
+      join_name == "CARRU'" ~ "CARRÙ",
+      join_name == "CASTEL SAN NICCOLO'" ~ "CASTEL SAN NICCOLÒ",
+      join_name == "CASTELFRANCO PIANDISCO'" ~ "CASTELFRANCO PIANDISCÒ",
+      join_name == "CAVAGLIA'" ~ "CAVAGLIÀ",
+      join_name == "CEFALA' DIANA" ~ "CEFALÀ DIANA",
+      join_name == "CEFALU'" ~ "CEFALÙ",
+      join_name == "CESARO'" ~ "CESARÒ",
+      join_name == "CHATILLON" ~ "CHÂTILLON",
+      join_name == "CIGLIE'" ~ "CIGLIÈ",
+      join_name == "CIMINA'" ~ "CIMINÀ",
+      join_name == "CIRIE'" ~ "CIRIÈ",
+      join_name == "CIRO'" ~ "CIRÒ",
+      join_name == "CIRO' MARINA" ~ "CIRÒ MARINA",
+      join_name == "CITTA' DELLA PIEVE" ~ "CITTÀ DELLA PIEVE",
+      join_name == "CITTA' DI CASTELLO" ~ "CITTÀ DI CASTELLO",
+      join_name == "CITTA' SANT'ANGELO" ~ "CITTÀ SANT'ANGELO",
+      join_name == "CODOGNE'" ~ "CODOGNÈ",
+      join_name == "CONDRO'" ~ "CONDRÒ",
+      join_name == "CONTA'" ~ "CONTÀ",
+      join_name == "CUORGNE'" ~ "CUORGNÈ",
+      join_name == "DASA'" ~ "DASÀ",
+      join_name == "DOBERDO' DEL LAGO" ~ "DOBERDÒ DEL LAGO-DOBERDOB",
+      join_name == "DOLCE'" ~ "DOLCÈ",
+      join_name == "DUINO AURISINA" ~ "DUINO AURISINA-DEVIN NABREŽINA",
+      join_name == "ERBE'" ~ "ERBÈ",
+      join_name == "FENEGRO'" ~ "FENEGRÒ",
+      join_name == "FIAVE'" ~ "FIAVÈ",
+      join_name == "FORLI'" ~ "FORLÌ",
+      join_name == "FOSSO'" ~ "FOSSÒ",
+      join_name == "FRAZZANO'" ~ "FRAZZANÒ",
+      join_name == "GIARDINI NAXOS" ~ "GIARDINI-NAXOS",
+      join_name == "GUALTIERI SICAMINO'" ~ "GUALTIERI SICAMINÒ",
+      join_name == "GALTELLI'" ~ "GALTELLÌ",
+      join_name == "GAMBOLO'" ~ "GAMBOLÒ",
+      join_name == "HONE" ~ "HÔNE",
+      join_name == "JONADI" ~ "IONADI",
+      join_name == "LODE'" ~ "LODÈ",
+      join_name == "LORANZE'" ~ "LORANZÈ",
+      join_name == "LUSIGLIE'" ~ "LUSIGLIÈ",
+      join_name == "MAIERA'" ~ "MAIERÀ",
+      join_name == "MALE'" ~ "MALÉ",
+      join_name == "MANSUE'" ~ "MANSUÈ",
+      join_name == "MASERA' DI PADOVA" ~ "MASERÀ DI PADOVA",
+      join_name == "MAZZARRA' SANT'ANDREA" ~ "MAZZARRÀ SANT'ANDREA",
+      join_name == "MAZZE'" ~ "MAZZÈ",
+      join_name == "MELICUCCA'" ~ "MELICUCCÀ",
+      join_name == "MERI'" ~ "MERÌ",
+      join_name == "MONDOVI'" ~ "MONDOVÌ",
+      join_name == "MONTA'" ~ "MONTÀ",
+      join_name == "MONTALDO DI MONDOVI'" ~ "MONTALDO DI MONDOVÌ",
+      join_name == "MUGGIO'" ~ "MUGGIÒ",
+      join_name == "NARDO'" ~ "NARDÒ",
+      join_name == "ONANI'" ~ "ONANÌ",
+      join_name == "PALU'" ~ "PALÙ",
+      join_name == "PANCHIA'" ~ "PANCHIÀ",
+      join_name == "PATERNO'" ~ "PATERNÒ",
+      join_name == "PATU'" ~ "PATÙ",
+      join_name == "PETRONA'" ~ "PETRONÀ",
+      join_name == "PIOVA' MASSAIA" ~ "PIOVÀ MASSAIA",
+      join_name == "PLATI'" ~ "PLATÌ",
+      join_name == "PONTE SAN NICOLO'" ~ "PONTE SAN NICOLÒ",
+      join_name == "PORTOBUFFOLE'" ~ "PORTOBUFFOLÈ",
+      join_name == "PRE'-SAINT-DIDIER" ~ "PRÉ-SAINT-DIDIER",
+      join_name == "PRELA'" ~ "PRELÀ",
+      join_name == "RICCO' DEL GOLFO DI SPEZIA" ~ "RICCÒ DEL GOLFO DI SPEZIA",
+      join_name == "RODI' MILICI" ~ "RODÌ MILICI",
+      join_name == "ROE' VOLCIANO" ~ "ROÈ VOLCIANO",
+      join_name == "RONCA'" ~ "RONCÀ",
+      join_name == "RORA'" ~ "RORÀ",
+      join_name == "ROSA'" ~ "ROSÀ",
+      join_name == "ROVERE' DELLA LUNA" ~ "ROVERÈ DELLA LUNA",
+      join_name == "ROVERE' VERONESE" ~ "ROVERÈ VERONESE",
+      join_name == "ROVEREDO DI GUA'" ~ "ROVEREDO DI GUÀ",
+      join_name == "SALO'" ~ "SALÒ",
+      join_name == "SAN DONA' DI PIAVE" ~ "SAN DONÀ DI PIAVE",
+      join_name == "SANTA MARIA HOE'" ~ "SANTA MARIA HOÈ",
+      join_name == "SANTA MARIA LA CARITA'" ~ "SANTA MARIA LA CARITÀ",
+      join_name == "SANTHIA'" ~ "SANTHIÀ",
+      join_name == "SCORZE'" ~ "SCORZÈ",
+      join_name == "SECLI'" ~ "SECLÌ",
+      join_name == "SENORBI'" ~ "SENORBÌ",
+      join_name == "SERRA RICCO'" ~ "SERRA RICCÒ",
+      join_name == "SODDI'" ~ "SODDÌ",
+      join_name == "SORGA'" ~ "SORGÀ",
+      join_name == "STALETTI'" ~ "STALETTÌ",
+      join_name == "TEMU'" ~ "TEMÙ",
+      join_name == "TORPE'" ~ "TORPÈ",
+      join_name == "TORTOLI'" ~ "TORTOLÌ",
+      join_name == "TRINITA'" ~ "TRINITÀ",
+      join_name == "ULA TIRSO" ~ "ULÀ TIRSO",
+      join_name == "VESTIGNE'" ~ "VESTIGNÈ",
+      join_name == "VIALFRE'" ~ "VIALFRÈ",
+      join_name == "VIGANO'" ~ "VIGANÒ",
+      join_name == "VIGGIU'" ~ "VIGGIÙ",
+      join_name == "VIU'" ~ "VIÙ",
+      join_name == "ZANE'" ~ "ZANÈ",
+      join_name == "ZERBOLO'" ~ "ZERBOLÒ",
+      join_name == "ZOPPE' DI CADORE" ~ "ZOPPÈ DI CADORE",
+      join_name == "EMAR�SE" ~ "EMARÈSE",
+      join_name == "FIE' ALLO SCILIAR/V�LS AM SCHLERN" ~ "FIÈ ALLO SCILIAR/VÖLS AM SCHLERN",
+      join_name == "FORLI' DEL SANNIO" ~ "FORLÌ DEL SANNIO",
+      join_name == "FORZA D'AGRO'" ~ "FORZA D'AGRÒ",
+      join_name == "FUNES/VILLN�SS" ~ "FUNES/VILLNÖSS",
+      join_name == "F�NIS" ~ "FÉNIS",
+      join_name == "GABBIONETA BINANUOVA" ~ "GABBIONETA-BINANUOVA",
+      join_name == "GADESCO PIEVE DELMONA" ~ "GADESCO-PIEVE DELMONA",
+      join_name == "GONNOSNO'" ~ "GONNOSNÒ",
+      join_name == "GRESSONEY-LA-TRINITE'" ~ "GRESSONEY-LA-TRINITÉ",
+      join_name == "JOVENCAN" ~ "JOVENÇAN",
+      join_name == "LUSON/L�SEN" ~ "LUSON/LÜSEN",
+      join_name == "MAGRE' SULLA STRADA DEL VINO/MARGREID AN DER WEINSTRASSE" ~ "MAGRÈ SULLA STRADA DEL VINO/MARGREID AN DER WEINSTRASSE",
+      join_name == "MELTINA/M�LTEN" ~ "MELTINA/MÖLTEN",
+      join_name == "MONRUPINO" ~ "MONRUPINO-REPENTABOR",
+      join_name == "MONTESCUDO - MONTE COLOMBO" ~ "MONTESCUDO-MONTE COLOMBO",
+      join_name == "MONTU' BECCARIA" ~ "MONTÙ BECCARIA",
+      join_name == "NUGHEDU SAN NICOLO'" ~ "NUGHEDU SAN NICOLÒ",
+      join_name == "PALU' DEL FERSINA" ~ "PALÙ DEL FERSINA",
+      join_name == "PRATO ALLO STELVIO/PRAD AM STILFSER JOCH" ~ "PRATO ALLO STELVIO/PRAD AM STILFSERJOCH",
+      join_name == "RASUN ANTERSELVA/RASEN-ANTHOLZ" ~ "RASUN-ANTERSELVA/RASEN-ANTHOLZ",
+      join_name == "RHEMES-NOTRE-DAME" ~ "RHÊMES-NOTRE-DAME",
+      join_name == "RHEMES-SAINT-GEORGES" ~ "RHÊMES-SAINT-GEORGES",
+      join_name == "RIO DI PUSTERIA/M�HLBACH" ~ "RIO DI PUSTERIA/MÜHLBACH",
+      join_name == "ROCCA CIGLIE'" ~ "ROCCA CIGLIÈ",
+      join_name == "ROCCAFORTE MONDOVI'" ~ "ROCCAFORTE MONDOVÌ",
+      join_name == "RUFFRE'-MENDOLA" ~ "RUFFRÈ-MENDOLA",
+      join_name == "SAINT-RHEMY-EN-BOSSES" ~ "SAINT-RHÉMY-EN-BOSSES",
+      join_name == "SAN FLORIANO DEL COLLIO" ~ "SAN FLORIANO DEL COLLIO-ŠTEVERJAN",
+      join_name == "SAN GIOVANNI DI FASSA" ~ "SAN GIOVANNI DI FASSA-SÈN JAN",
+      join_name == "SAN MICHELE MONDOVI'" ~ "SAN MICHELE MONDOVÌ",
+      join_name == "SAN NICOLO' D'ARCIDANO" ~ "SAN NICOLÒ D'ARCIDANO",
+      join_name == "SAN NICOLO' DI COMELICO" ~ "SAN NICOLÒ DI COMELICO",
+      join_name == "SAN NICOLO' GERREI" ~ "SAN NICOLÒ GERREI",
+      join_name == "SAN PIETRO DI CARIDA'" ~ "SAN PIETRO DI CARIDÀ",
+      join_name == "SANFRE'" ~ "SANFRÈ",
+      join_name == "SANTA CRISTINA VALGARDENA/ST. CHRISTINA IN GR�DEN" ~ "SANTA CRISTINA VALGARDENA/ST. CHRISTINA IN GRÖDEN",
+      join_name == "SAVOGNA D'ISONZO" ~ "SAVOGNA D'ISONZO-SOVODNJE OB SOČI",
+      join_name == "SELVA DEI MOLINI/M�HLWALD" ~ "SELVA DEI MOLINI/MÜHLWALD",
+      join_name == "SELVA DI VAL GARDENA/WOLKENSTEIN IN GR�DEN" ~ "SELVA DI VAL GARDENA/WOLKENSTEIN IN GRÖDEN",
+      join_name == "SGONICO" ~ "SGONICO-ZGONIK",
+      join_name == "TORRE MONDOVI'" ~ "TORRE MONDOVÌ",
+      join_name == "TRAVACO' SICCOMARIO" ~ "TRAVACÒ SICCOMARIO",
+      join_name == "TRINITA' D'AGULTU E VIGNOLA" ~ "TRINITÀ D'AGULTU E VIGNOLA",
+      join_name == "TUBRE/TAUFERS IM M�NSTERTAL" ~ "TUBRE/TAUFERS IM MÜNSTERTAL",
+      join_name == "VERANO/V�RAN" ~ "VERANO/VÖRAN",
+      join_name == "VERR�S" ~ "VERRÈS",
+      join_name == "VILLA D'ALME'" ~ "VILLA D'ALMÈ",
+      join_name == "VILLANOVA MONDOVI'" ~ "VILLANOVA MONDOVÌ",
+      TRUE ~ join_name
+    )
+  ) %>%
+  select(join_name, turnout_pct)
+```
+Questo per sistemare i mismatch
+
+```{r}
+setdiff(turnout_by_comune_newclean$join_name, mun_shape_clean$join_name)
+setdiff(mun_shape_clean$join_name, turnout_by_comune_newclean$join_name)
+```
+Confronto di nuovo, ne rimangono ancora alcuni.
+These mismtches are due to newer *administrative merges* reflected in the electoral dataset but noy by the shapefile.
+
+```{r}
+mun_shape_newclean <- mun_shape_clean %>%
+  mutate(
+    join_name = case_when(
+      join_name == "ALANO DI PIAVE" ~ "SETTEVILLE",
+      join_name == "QUERO VAS" ~ "SETTEVILLE",
+      join_name == "VIGHIZZOLO D'ESTE" ~ "SANTA CATERINA D'ESTE",
+      join_name == "CARCERI" ~ "SANTA CATERINA D'ESTE",
+      join_name == "GAMBUGLIANO" ~ "SOVIZZO",
+      TRUE ~ join_name
+    )
+  )
+```
+
+```{r}
+setdiff(turnout_by_comune_newclean$join_name, mun_shape_newclean$join_name)
+setdiff(mun_shape_newclean$join_name, turnout_by_comune_newclean$join_name)
+```
+We can finally perform the leftjoin for the map
+```{r}
+# Left Join shapefile comuni + turnout
+turnout_by_comune_map <- left_join(
+  mun_shape_newclean,
+  turnout_by_comune_newclean,
+  by = "join_name")
+# check with this: should be 0 in output otherwise grey areas for N/A
+sum(is.na(turnout_by_comune_map$turnout_pct))
+```
+
+Plot & Save Plot
+
+```{r}
+# Plot
+turnout_by_comune_plot <- ggplot(turnout_by_comune_map) +
+  geom_sf(aes(fill = turnout_pct), color = "white", linewidth = 0.05) +
+  scale_fill_distiller(palette = "OrRd", direction = 1) +
+  labs(
+    title = "Turnout share by municipality (EU elections 2024)",
+    fill  = "Turnout share (%)"
+  ) +
+  theme_bw()
+
+turnout_by_comune_plot
+
+ggsave(file.path(path_out_maps, "turnout_share_comune_EU2024.pdf"),
+       plot = turnout_by_comune_plot,
+       width = 8,
+       height = 10)
+```
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+
+# FILTRO: tieni solo i comuni della Città Metropolitana di Roma
+turnout_roma_map <- turnout_by_comune_map %>%
+  filter(COD_PROV == 58) 
+
+# Ora 'roma_metrop' contiene SOLO i poligoni dei comuni romani.
+turnout_roma_map <- ggplot(turnout_roma_map) +
+  geom_sf(aes(fill = turnout_pct), color = "white", linewidth = 0.1) +
+  scale_fill_distiller(palette = "OrRd", direction = 1) +
+  labs(
+    title = "Turnout share in the municipalities of the Metropolitan City of Rome (EU elections 2024)",
+    fill = "Turnout share (%)"
+  ) +
+  theme_bw()
+
+ggsave(
+  file.path(path_out_maps, "turnout_share_roma_municipalities_EU2024.pdf"),
+  plot = turnout_roma_map,
+  width = 8,
+  height = 10
+)
+
+turnout_roma_map
+
+```
+## Mapping PRRP across municipalities and in Rome metropolitan city
+
+```{r}
+prrp_by_comune_clean <- prrp_by_comune %>%
+  mutate(
+    join_name = str_squish(str_to_upper(DESCCOMUNE))
+  ) %>%
+  select(join_name, prrp_vote_share_pct)
+
+# Cleaning prrp by municipality/comune
+prrp_by_comune_newclean <- prrp_by_comune_clean %>%
+  mutate(
+    # fixing mismatch between electoral data and municipal shapefile: a sx i nomi nei electoral data, a dx i nomi nello shapefile
+    # join_name == "NOME_NEI_DATI_ELETTORALI" ~ "NOME_NELLO_SHAPEFILE"
+    join_name = case_when(
+      join_name == "AGLIE'" ~ "AGLIÈ",
+      join_name == "ALA' DEI SARDI" ~ "ALÀ DEI SARDI",
+      join_name == "ALI'" ~ "ALÌ",
+      join_name == "ALI' TERME" ~ "ALÌ TERME",
+      join_name == "ALME'" ~ "ALMÈ",
+      join_name == "ANTEY-SAINT-ANDRE'" ~ "ANTEY-SAINT-ANDRÉ",
+      join_name == "ARQUA' PETRARCA" ~ "ARQUÀ PETRARCA",
+      join_name == "ARQUA' POLESINE" ~ "ARQUÀ POLESINE",
+      join_name == "ARSIE'" ~ "ARSIÈ",
+      join_name == "BARZANO'" ~ "BARZANÒ",
+      join_name == "BASCAPE'" ~ "BASCAPÈ",
+      join_name == "BASELGA DI PINE'" ~ "BASELGA DI PINÈ",
+      join_name == "BASICO'" ~ "BASICÒ",
+      join_name == "BASTIA MONDOVI'" ~ "BASTIA MONDOVÌ",
+      join_name == "BELVI'" ~ "BELVÌ",
+      join_name == "BIANZE'" ~ "BIANZÈ",
+      join_name == "BIDONI'" ~ "BIDONÌ",
+      join_name == "BRIGNANO FRASCATA" ~ "BRIGNANO-FRASCATA",
+      join_name == "BUDDUSO'" ~ "BUDDUSÒ",
+      join_name == "CALATAFIMI SEGESTA" ~ "CALATAFIMI-SEGESTA",
+      join_name == "CANICATTI'" ~ "CANICATTÌ",
+      join_name == "CANTU'" ~ "CANTÙ",
+      join_name == "CARDE'" ~ "CARDÈ",
+      join_name == "CARRE'" ~ "CARRÈ",
+      join_name == "CARRU'" ~ "CARRÙ",
+      join_name == "CASTEL SAN NICCOLO'" ~ "CASTEL SAN NICCOLÒ",
+      join_name == "CASTELFRANCO PIANDISCO'" ~ "CASTELFRANCO PIANDISCÒ",
+      join_name == "CAVAGLIA'" ~ "CAVAGLIÀ",
+      join_name == "CEFALA' DIANA" ~ "CEFALÀ DIANA",
+      join_name == "CEFALU'" ~ "CEFALÙ",
+      join_name == "CESARO'" ~ "CESARÒ",
+      join_name == "CHATILLON" ~ "CHÂTILLON",
+      join_name == "CIGLIE'" ~ "CIGLIÈ",
+      join_name == "CIMINA'" ~ "CIMINÀ",
+      join_name == "CIRIE'" ~ "CIRIÈ",
+      join_name == "CIRO'" ~ "CIRÒ",
+      join_name == "CIRO' MARINA" ~ "CIRÒ MARINA",
+      join_name == "CITTA' DELLA PIEVE" ~ "CITTÀ DELLA PIEVE",
+      join_name == "CITTA' DI CASTELLO" ~ "CITTÀ DI CASTELLO",
+      join_name == "CITTA' SANT'ANGELO" ~ "CITTÀ SANT'ANGELO",
+      join_name == "CODOGNE'" ~ "CODOGNÈ",
+      join_name == "CONDRO'" ~ "CONDRÒ",
+      join_name == "CONTA'" ~ "CONTÀ",
+      join_name == "CUORGNE'" ~ "CUORGNÈ",
+      join_name == "DASA'" ~ "DASÀ",
+      join_name == "DOBERDO' DEL LAGO" ~ "DOBERDÒ DEL LAGO-DOBERDOB",
+      join_name == "DOLCE'" ~ "DOLCÈ",
+      join_name == "DUINO AURISINA" ~ "DUINO AURISINA-DEVIN NABREŽINA",
+      join_name == "ERBE'" ~ "ERBÈ",
+      join_name == "FENEGRO'" ~ "FENEGRÒ",
+      join_name == "FIAVE'" ~ "FIAVÈ",
+      join_name == "FORLI'" ~ "FORLÌ",
+      join_name == "FOSSO'" ~ "FOSSÒ",
+      join_name == "FRAZZANO'" ~ "FRAZZANÒ",
+      join_name == "GIARDINI NAXOS" ~ "GIARDINI-NAXOS",
+      join_name == "GUALTIERI SICAMINO'" ~ "GUALTIERI SICAMINÒ",
+      join_name == "GALTELLI'" ~ "GALTELLÌ",
+      join_name == "GAMBOLO'" ~ "GAMBOLÒ",
+      join_name == "HONE" ~ "HÔNE",
+      join_name == "JONADI" ~ "IONADI",
+      join_name == "LODE'" ~ "LODÈ",
+      join_name == "LORANZE'" ~ "LORANZÈ",
+      join_name == "LUSIGLIE'" ~ "LUSIGLIÈ",
+      join_name == "MAIERA'" ~ "MAIERÀ",
+      join_name == "MALE'" ~ "MALÉ",
+      join_name == "MANSUE'" ~ "MANSUÈ",
+      join_name == "MASERA' DI PADOVA" ~ "MASERÀ DI PADOVA",
+      join_name == "MAZZARRA' SANT'ANDREA" ~ "MAZZARRÀ SANT'ANDREA",
+      join_name == "MAZZE'" ~ "MAZZÈ",
+      join_name == "MELICUCCA'" ~ "MELICUCCÀ",
+      join_name == "MERI'" ~ "MERÌ",
+      join_name == "MONDOVI'" ~ "MONDOVÌ",
+      join_name == "MONTA'" ~ "MONTÀ",
+      join_name == "MONTALDO DI MONDOVI'" ~ "MONTALDO DI MONDOVÌ",
+      join_name == "MUGGIO'" ~ "MUGGIÒ",
+      join_name == "NARDO'" ~ "NARDÒ",
+      join_name == "ONANI'" ~ "ONANÌ",
+      join_name == "PALU'" ~ "PALÙ",
+      join_name == "PANCHIA'" ~ "PANCHIÀ",
+      join_name == "PATERNO'" ~ "PATERNÒ",
+      join_name == "PATU'" ~ "PATÙ",
+      join_name == "PETRONA'" ~ "PETRONÀ",
+      join_name == "PIOVA' MASSAIA" ~ "PIOVÀ MASSAIA",
+      join_name == "PLATI'" ~ "PLATÌ",
+      join_name == "PONTE SAN NICOLO'" ~ "PONTE SAN NICOLÒ",
+      join_name == "PORTOBUFFOLE'" ~ "PORTOBUFFOLÈ",
+      join_name == "PRE'-SAINT-DIDIER" ~ "PRÉ-SAINT-DIDIER",
+      join_name == "PRELA'" ~ "PRELÀ",
+      join_name == "RICCO' DEL GOLFO DI SPEZIA" ~ "RICCÒ DEL GOLFO DI SPEZIA",
+      join_name == "RODI' MILICI" ~ "RODÌ MILICI",
+      join_name == "ROE' VOLCIANO" ~ "ROÈ VOLCIANO",
+      join_name == "RONCA'" ~ "RONCÀ",
+      join_name == "RORA'" ~ "RORÀ",
+      join_name == "ROSA'" ~ "ROSÀ",
+      join_name == "ROVERE' DELLA LUNA" ~ "ROVERÈ DELLA LUNA",
+      join_name == "ROVERE' VERONESE" ~ "ROVERÈ VERONESE",
+      join_name == "ROVEREDO DI GUA'" ~ "ROVEREDO DI GUÀ",
+      join_name == "SALO'" ~ "SALÒ",
+      join_name == "SAN DONA' DI PIAVE" ~ "SAN DONÀ DI PIAVE",
+      join_name == "SANTA MARIA HOE'" ~ "SANTA MARIA HOÈ",
+      join_name == "SANTA MARIA LA CARITA'" ~ "SANTA MARIA LA CARITÀ",
+      join_name == "SANTHIA'" ~ "SANTHIÀ",
+      join_name == "SCORZE'" ~ "SCORZÈ",
+      join_name == "SECLI'" ~ "SECLÌ",
+      join_name == "SENORBI'" ~ "SENORBÌ",
+      join_name == "SERRA RICCO'" ~ "SERRA RICCÒ",
+      join_name == "SODDI'" ~ "SODDÌ",
+      join_name == "SORGA'" ~ "SORGÀ",
+      join_name == "STALETTI'" ~ "STALETTÌ",
+      join_name == "TEMU'" ~ "TEMÙ",
+      join_name == "TORPE'" ~ "TORPÈ",
+      join_name == "TORTOLI'" ~ "TORTOLÌ",
+      join_name == "TRINITA'" ~ "TRINITÀ",
+      join_name == "ULA TIRSO" ~ "ULÀ TIRSO",
+      join_name == "VESTIGNE'" ~ "VESTIGNÈ",
+      join_name == "VIALFRE'" ~ "VIALFRÈ",
+      join_name == "VIGANO'" ~ "VIGANÒ",
+      join_name == "VIGGIU'" ~ "VIGGIÙ",
+      join_name == "VIU'" ~ "VIÙ",
+      join_name == "ZANE'" ~ "ZANÈ",
+      join_name == "ZERBOLO'" ~ "ZERBOLÒ",
+      join_name == "ZOPPE' DI CADORE" ~ "ZOPPÈ DI CADORE",
+      join_name == "EMAR�SE" ~ "EMARÈSE",
+      join_name == "FIE' ALLO SCILIAR/V�LS AM SCHLERN" ~ "FIÈ ALLO SCILIAR/VÖLS AM SCHLERN",
+      join_name == "FORLI' DEL SANNIO" ~ "FORLÌ DEL SANNIO",
+      join_name == "FORZA D'AGRO'" ~ "FORZA D'AGRÒ",
+      join_name == "FUNES/VILLN�SS" ~ "FUNES/VILLNÖSS",
+      join_name == "F�NIS" ~ "FÉNIS",
+      join_name == "GABBIONETA BINANUOVA" ~ "GABBIONETA-BINANUOVA",
+      join_name == "GADESCO PIEVE DELMONA" ~ "GADESCO-PIEVE DELMONA",
+      join_name == "GONNOSNO'" ~ "GONNOSNÒ",
+      join_name == "GRESSONEY-LA-TRINITE'" ~ "GRESSONEY-LA-TRINITÉ",
+      join_name == "JOVENCAN" ~ "JOVENÇAN",
+      join_name == "LUSON/L�SEN" ~ "LUSON/LÜSEN",
+      join_name == "MAGRE' SULLA STRADA DEL VINO/MARGREID AN DER WEINSTRASSE" ~ "MAGRÈ SULLA STRADA DEL VINO/MARGREID AN DER WEINSTRASSE",
+      join_name == "MELTINA/M�LTEN" ~ "MELTINA/MÖLTEN",
+      join_name == "MONRUPINO" ~ "MONRUPINO-REPENTABOR",
+      join_name == "MONTESCUDO - MONTE COLOMBO" ~ "MONTESCUDO-MONTE COLOMBO",
+      join_name == "MONTU' BECCARIA" ~ "MONTÙ BECCARIA",
+      join_name == "NUGHEDU SAN NICOLO'" ~ "NUGHEDU SAN NICOLÒ",
+      join_name == "PALU' DEL FERSINA" ~ "PALÙ DEL FERSINA",
+      join_name == "PRATO ALLO STELVIO/PRAD AM STILFSER JOCH" ~ "PRATO ALLO STELVIO/PRAD AM STILFSERJOCH",
+      join_name == "RASUN ANTERSELVA/RASEN-ANTHOLZ" ~ "RASUN-ANTERSELVA/RASEN-ANTHOLZ",
+      join_name == "RHEMES-NOTRE-DAME" ~ "RHÊMES-NOTRE-DAME",
+      join_name == "RHEMES-SAINT-GEORGES" ~ "RHÊMES-SAINT-GEORGES",
+      join_name == "RIO DI PUSTERIA/M�HLBACH" ~ "RIO DI PUSTERIA/MÜHLBACH",
+      join_name == "ROCCA CIGLIE'" ~ "ROCCA CIGLIÈ",
+      join_name == "ROCCAFORTE MONDOVI'" ~ "ROCCAFORTE MONDOVÌ",
+      join_name == "RUFFRE'-MENDOLA" ~ "RUFFRÈ-MENDOLA",
+      join_name == "SAINT-RHEMY-EN-BOSSES" ~ "SAINT-RHÉMY-EN-BOSSES",
+      join_name == "SAN FLORIANO DEL COLLIO" ~ "SAN FLORIANO DEL COLLIO-ŠTEVERJAN",
+      join_name == "SAN GIOVANNI DI FASSA" ~ "SAN GIOVANNI DI FASSA-SÈN JAN",
+      join_name == "SAN MICHELE MONDOVI'" ~ "SAN MICHELE MONDOVÌ",
+      join_name == "SAN NICOLO' D'ARCIDANO" ~ "SAN NICOLÒ D'ARCIDANO",
+      join_name == "SAN NICOLO' DI COMELICO" ~ "SAN NICOLÒ DI COMELICO",
+      join_name == "SAN NICOLO' GERREI" ~ "SAN NICOLÒ GERREI",
+      join_name == "SAN PIETRO DI CARIDA'" ~ "SAN PIETRO DI CARIDÀ",
+      join_name == "SANFRE'" ~ "SANFRÈ",
+      join_name == "SANTA CRISTINA VALGARDENA/ST. CHRISTINA IN GR�DEN" ~ "SANTA CRISTINA VALGARDENA/ST. CHRISTINA IN GRÖDEN",
+      join_name == "SAVOGNA D'ISONZO" ~ "SAVOGNA D'ISONZO-SOVODNJE OB SOČI",
+      join_name == "SELVA DEI MOLINI/M�HLWALD" ~ "SELVA DEI MOLINI/MÜHLWALD",
+      join_name == "SELVA DI VAL GARDENA/WOLKENSTEIN IN GR�DEN" ~ "SELVA DI VAL GARDENA/WOLKENSTEIN IN GRÖDEN",
+      join_name == "SGONICO" ~ "SGONICO-ZGONIK",
+      join_name == "TORRE MONDOVI'" ~ "TORRE MONDOVÌ",
+      join_name == "TRAVACO' SICCOMARIO" ~ "TRAVACÒ SICCOMARIO",
+      join_name == "TRINITA' D'AGULTU E VIGNOLA" ~ "TRINITÀ D'AGULTU E VIGNOLA",
+      join_name == "TUBRE/TAUFERS IM M�NSTERTAL" ~ "TUBRE/TAUFERS IM MÜNSTERTAL",
+      join_name == "VERANO/V�RAN" ~ "VERANO/VÖRAN",
+      join_name == "VERR�S" ~ "VERRÈS",
+      join_name == "VILLA D'ALME'" ~ "VILLA D'ALMÈ",
+      join_name == "VILLANOVA MONDOVI'" ~ "VILLANOVA MONDOVÌ",
+      TRUE ~ join_name
+    )
+  ) %>%
+  select(join_name, prrp_vote_share_pct)
+
+```
+
+```{r}
+# Left Join shapefile comuni + turnout
+prrp_by_comune_map <- left_join(
+  mun_shape_newclean,
+  prrp_by_comune_newclean,
+  by = "join_name")
+# check with this: should be 0 in output otherwise grey areas for N/A
+sum(is.na(prrp_by_comune_map$prrp_vote_share_pct))
+```
+
+```{r}
+setdiff(prrp_by_comune_newclean$join_name, mun_shape_newclean$join_name)
+setdiff(mun_shape_newclean$join_name, prrp_by_comune_newclean$join_name)
+```
+
+```{r}
+mun_shape_newclean %>%
+  filter(join_name == "MINERBE") %>%
+  select(COMUNE, join_name)
+```
+```{r}
+Europee24_Italia_df %>%
+  filter(str_squish(str_to_upper(DESCCOMUNE)) == "MINERBE") %>%
+  select(DESCPROVINCIA, DESCCOMUNE, DESCLISTA, NUMVOTI, VOTANTI) %>%
+  distinct()
+```
+“One municipality (Minerbe) was excluded due to inconsistent electoral data (votes recorded but zero turnout). ---> Ministry of the Interior's mistake.
+
+```{r}
+# Plot
+prrp_by_comune_plot <- ggplot(prrp_by_comune_map) +
+  geom_sf(aes(fill = prrp_vote_share_pct), color = "white", linewidth = 0.05) +
+  scale_fill_distiller(palette = "BuPu", direction = 1) +
+  labs(
+    title = "PRRPs share by municipality (EU elections 2024)",
+    fill  = "PRRPs share (%)"
+  ) +
+  theme_bw()
+
+prrp_by_comune_plot
+
+ggsave(file.path(path_out_maps, "prrp_comune_EU2024.pdf"),
+       plot = prrp_by_comune_plot,
+       width = 8,
+       height = 10)
+```
+
+```{r}
+prrp_roma_map <- prrp_by_comune_map %>%
+  filter(COD_PROV == 58) 
+
+prrp_roma_map <- ggplot(prrp_roma_map) +
+  geom_sf(aes(fill = prrp_vote_share_pct), color = "white", linewidth = 0.1) +
+  scale_fill_distiller(palette = "BuPu", direction = 1) +
+  labs(
+    title = "PRRPs share in the municipalities of the Metropolitan City of Rome (EU elections 2024)",
+    fill = "PRRPs share (%)"
+  ) +
+  theme_bw()
+
+ggsave(
+  file.path(path_out_maps, "prrp_share_roma_municipalities_EU2024.pdf"),
+  plot = prrp_roma_map,
+  width = 8,
+  height = 10
+)
+
+prrp_roma_map
+```
+## Mapping FDI by comune and in Rome
+
+```{r}
+fdi_by_comune_clean <- fdi_by_comune %>%
+  mutate(
+    join_name = str_squish(str_to_upper(DESCCOMUNE))
+  ) %>%
+  select(join_name, vote_share_pct)
+
+# Cleaning FDI by municipality/comune
+fdi_by_comune_newclean <- fdi_by_comune_clean %>%
+  mutate(
+    # fixing mismatch between electoral data and municipal shapefile: a sx i nomi nei electoral data, a dx i nomi nello shapefile
+    # join_name == "NOME_NEI_DATI_ELETTORALI" ~ "NOME_NELLO_SHAPEFILE"
+    join_name = case_when(
+      join_name == "AGLIE'" ~ "AGLIÈ",
+      join_name == "ALA' DEI SARDI" ~ "ALÀ DEI SARDI",
+      join_name == "ALI'" ~ "ALÌ",
+      join_name == "ALI' TERME" ~ "ALÌ TERME",
+      join_name == "ALME'" ~ "ALMÈ",
+      join_name == "ANTEY-SAINT-ANDRE'" ~ "ANTEY-SAINT-ANDRÉ",
+      join_name == "ARQUA' PETRARCA" ~ "ARQUÀ PETRARCA",
+      join_name == "ARQUA' POLESINE" ~ "ARQUÀ POLESINE",
+      join_name == "ARSIE'" ~ "ARSIÈ",
+      join_name == "BARZANO'" ~ "BARZANÒ",
+      join_name == "BASCAPE'" ~ "BASCAPÈ",
+      join_name == "BASELGA DI PINE'" ~ "BASELGA DI PINÈ",
+      join_name == "BASICO'" ~ "BASICÒ",
+      join_name == "BASTIA MONDOVI'" ~ "BASTIA MONDOVÌ",
+      join_name == "BELVI'" ~ "BELVÌ",
+      join_name == "BIANZE'" ~ "BIANZÈ",
+      join_name == "BIDONI'" ~ "BIDONÌ",
+      join_name == "BRIGNANO FRASCATA" ~ "BRIGNANO-FRASCATA",
+      join_name == "BUDDUSO'" ~ "BUDDUSÒ",
+      join_name == "CALATAFIMI SEGESTA" ~ "CALATAFIMI-SEGESTA",
+      join_name == "CANICATTI'" ~ "CANICATTÌ",
+      join_name == "CANTU'" ~ "CANTÙ",
+      join_name == "CARDE'" ~ "CARDÈ",
+      join_name == "CARRE'" ~ "CARRÈ",
+      join_name == "CARRU'" ~ "CARRÙ",
+      join_name == "CASTEL SAN NICCOLO'" ~ "CASTEL SAN NICCOLÒ",
+      join_name == "CASTELFRANCO PIANDISCO'" ~ "CASTELFRANCO PIANDISCÒ",
+      join_name == "CAVAGLIA'" ~ "CAVAGLIÀ",
+      join_name == "CEFALA' DIANA" ~ "CEFALÀ DIANA",
+      join_name == "CEFALU'" ~ "CEFALÙ",
+      join_name == "CESARO'" ~ "CESARÒ",
+      join_name == "CHATILLON" ~ "CHÂTILLON",
+      join_name == "CIGLIE'" ~ "CIGLIÈ",
+      join_name == "CIMINA'" ~ "CIMINÀ",
+      join_name == "CIRIE'" ~ "CIRIÈ",
+      join_name == "CIRO'" ~ "CIRÒ",
+      join_name == "CIRO' MARINA" ~ "CIRÒ MARINA",
+      join_name == "CITTA' DELLA PIEVE" ~ "CITTÀ DELLA PIEVE",
+      join_name == "CITTA' DI CASTELLO" ~ "CITTÀ DI CASTELLO",
+      join_name == "CITTA' SANT'ANGELO" ~ "CITTÀ SANT'ANGELO",
+      join_name == "CODOGNE'" ~ "CODOGNÈ",
+      join_name == "CONDRO'" ~ "CONDRÒ",
+      join_name == "CONTA'" ~ "CONTÀ",
+      join_name == "CUORGNE'" ~ "CUORGNÈ",
+      join_name == "DASA'" ~ "DASÀ",
+      join_name == "DOBERDO' DEL LAGO" ~ "DOBERDÒ DEL LAGO-DOBERDOB",
+      join_name == "DOLCE'" ~ "DOLCÈ",
+      join_name == "DUINO AURISINA" ~ "DUINO AURISINA-DEVIN NABREŽINA",
+      join_name == "ERBE'" ~ "ERBÈ",
+      join_name == "FENEGRO'" ~ "FENEGRÒ",
+      join_name == "FIAVE'" ~ "FIAVÈ",
+      join_name == "FORLI'" ~ "FORLÌ",
+      join_name == "FOSSO'" ~ "FOSSÒ",
+      join_name == "FRAZZANO'" ~ "FRAZZANÒ",
+      join_name == "GIARDINI NAXOS" ~ "GIARDINI-NAXOS",
+      join_name == "GUALTIERI SICAMINO'" ~ "GUALTIERI SICAMINÒ",
+      join_name == "GALTELLI'" ~ "GALTELLÌ",
+      join_name == "GAMBOLO'" ~ "GAMBOLÒ",
+      join_name == "HONE" ~ "HÔNE",
+      join_name == "JONADI" ~ "IONADI",
+      join_name == "LODE'" ~ "LODÈ",
+      join_name == "LORANZE'" ~ "LORANZÈ",
+      join_name == "LUSIGLIE'" ~ "LUSIGLIÈ",
+      join_name == "MAIERA'" ~ "MAIERÀ",
+      join_name == "MALE'" ~ "MALÉ",
+      join_name == "MANSUE'" ~ "MANSUÈ",
+      join_name == "MASERA' DI PADOVA" ~ "MASERÀ DI PADOVA",
+      join_name == "MAZZARRA' SANT'ANDREA" ~ "MAZZARRÀ SANT'ANDREA",
+      join_name == "MAZZE'" ~ "MAZZÈ",
+      join_name == "MELICUCCA'" ~ "MELICUCCÀ",
+      join_name == "MERI'" ~ "MERÌ",
+      join_name == "MONDOVI'" ~ "MONDOVÌ",
+      join_name == "MONTA'" ~ "MONTÀ",
+      join_name == "MONTALDO DI MONDOVI'" ~ "MONTALDO DI MONDOVÌ",
+      join_name == "MUGGIO'" ~ "MUGGIÒ",
+      join_name == "NARDO'" ~ "NARDÒ",
+      join_name == "ONANI'" ~ "ONANÌ",
+      join_name == "PALU'" ~ "PALÙ",
+      join_name == "PANCHIA'" ~ "PANCHIÀ",
+      join_name == "PATERNO'" ~ "PATERNÒ",
+      join_name == "PATU'" ~ "PATÙ",
+      join_name == "PETRONA'" ~ "PETRONÀ",
+      join_name == "PIOVA' MASSAIA" ~ "PIOVÀ MASSAIA",
+      join_name == "PLATI'" ~ "PLATÌ",
+      join_name == "PONTE SAN NICOLO'" ~ "PONTE SAN NICOLÒ",
+      join_name == "PORTOBUFFOLE'" ~ "PORTOBUFFOLÈ",
+      join_name == "PRE'-SAINT-DIDIER" ~ "PRÉ-SAINT-DIDIER",
+      join_name == "PRELA'" ~ "PRELÀ",
+      join_name == "RICCO' DEL GOLFO DI SPEZIA" ~ "RICCÒ DEL GOLFO DI SPEZIA",
+      join_name == "RODI' MILICI" ~ "RODÌ MILICI",
+      join_name == "ROE' VOLCIANO" ~ "ROÈ VOLCIANO",
+      join_name == "RONCA'" ~ "RONCÀ",
+      join_name == "RORA'" ~ "RORÀ",
+      join_name == "ROSA'" ~ "ROSÀ",
+      join_name == "ROVERE' DELLA LUNA" ~ "ROVERÈ DELLA LUNA",
+      join_name == "ROVERE' VERONESE" ~ "ROVERÈ VERONESE",
+      join_name == "ROVEREDO DI GUA'" ~ "ROVEREDO DI GUÀ",
+      join_name == "SALO'" ~ "SALÒ",
+      join_name == "SAN DONA' DI PIAVE" ~ "SAN DONÀ DI PIAVE",
+      join_name == "SANTA MARIA HOE'" ~ "SANTA MARIA HOÈ",
+      join_name == "SANTA MARIA LA CARITA'" ~ "SANTA MARIA LA CARITÀ",
+      join_name == "SANTHIA'" ~ "SANTHIÀ",
+      join_name == "SCORZE'" ~ "SCORZÈ",
+      join_name == "SECLI'" ~ "SECLÌ",
+      join_name == "SENORBI'" ~ "SENORBÌ",
+      join_name == "SERRA RICCO'" ~ "SERRA RICCÒ",
+      join_name == "SODDI'" ~ "SODDÌ",
+      join_name == "SORGA'" ~ "SORGÀ",
+      join_name == "STALETTI'" ~ "STALETTÌ",
+      join_name == "TEMU'" ~ "TEMÙ",
+      join_name == "TORPE'" ~ "TORPÈ",
+      join_name == "TORTOLI'" ~ "TORTOLÌ",
+      join_name == "TRINITA'" ~ "TRINITÀ",
+      join_name == "ULA TIRSO" ~ "ULÀ TIRSO",
+      join_name == "VESTIGNE'" ~ "VESTIGNÈ",
+      join_name == "VIALFRE'" ~ "VIALFRÈ",
+      join_name == "VIGANO'" ~ "VIGANÒ",
+      join_name == "VIGGIU'" ~ "VIGGIÙ",
+      join_name == "VIU'" ~ "VIÙ",
+      join_name == "ZANE'" ~ "ZANÈ",
+      join_name == "ZERBOLO'" ~ "ZERBOLÒ",
+      join_name == "ZOPPE' DI CADORE" ~ "ZOPPÈ DI CADORE",
+      join_name == "EMAR�SE" ~ "EMARÈSE",
+      join_name == "FIE' ALLO SCILIAR/V�LS AM SCHLERN" ~ "FIÈ ALLO SCILIAR/VÖLS AM SCHLERN",
+      join_name == "FORLI' DEL SANNIO" ~ "FORLÌ DEL SANNIO",
+      join_name == "FORZA D'AGRO'" ~ "FORZA D'AGRÒ",
+      join_name == "FUNES/VILLN�SS" ~ "FUNES/VILLNÖSS",
+      join_name == "F�NIS" ~ "FÉNIS",
+      join_name == "GABBIONETA BINANUOVA" ~ "GABBIONETA-BINANUOVA",
+      join_name == "GADESCO PIEVE DELMONA" ~ "GADESCO-PIEVE DELMONA",
+      join_name == "GONNOSNO'" ~ "GONNOSNÒ",
+      join_name == "GRESSONEY-LA-TRINITE'" ~ "GRESSONEY-LA-TRINITÉ",
+      join_name == "JOVENCAN" ~ "JOVENÇAN",
+      join_name == "LUSON/L�SEN" ~ "LUSON/LÜSEN",
+      join_name == "MAGRE' SULLA STRADA DEL VINO/MARGREID AN DER WEINSTRASSE" ~ "MAGRÈ SULLA STRADA DEL VINO/MARGREID AN DER WEINSTRASSE",
+      join_name == "MELTINA/M�LTEN" ~ "MELTINA/MÖLTEN",
+      join_name == "MONRUPINO" ~ "MONRUPINO-REPENTABOR",
+      join_name == "MONTESCUDO - MONTE COLOMBO" ~ "MONTESCUDO-MONTE COLOMBO",
+      join_name == "MONTU' BECCARIA" ~ "MONTÙ BECCARIA",
+      join_name == "NUGHEDU SAN NICOLO'" ~ "NUGHEDU SAN NICOLÒ",
+      join_name == "PALU' DEL FERSINA" ~ "PALÙ DEL FERSINA",
+      join_name == "PRATO ALLO STELVIO/PRAD AM STILFSER JOCH" ~ "PRATO ALLO STELVIO/PRAD AM STILFSERJOCH",
+      join_name == "RASUN ANTERSELVA/RASEN-ANTHOLZ" ~ "RASUN-ANTERSELVA/RASEN-ANTHOLZ",
+      join_name == "RHEMES-NOTRE-DAME" ~ "RHÊMES-NOTRE-DAME",
+      join_name == "RHEMES-SAINT-GEORGES" ~ "RHÊMES-SAINT-GEORGES",
+      join_name == "RIO DI PUSTERIA/M�HLBACH" ~ "RIO DI PUSTERIA/MÜHLBACH",
+      join_name == "ROCCA CIGLIE'" ~ "ROCCA CIGLIÈ",
+      join_name == "ROCCAFORTE MONDOVI'" ~ "ROCCAFORTE MONDOVÌ",
+      join_name == "RUFFRE'-MENDOLA" ~ "RUFFRÈ-MENDOLA",
+      join_name == "SAINT-RHEMY-EN-BOSSES" ~ "SAINT-RHÉMY-EN-BOSSES",
+      join_name == "SAN FLORIANO DEL COLLIO" ~ "SAN FLORIANO DEL COLLIO-ŠTEVERJAN",
+      join_name == "SAN GIOVANNI DI FASSA" ~ "SAN GIOVANNI DI FASSA-SÈN JAN",
+      join_name == "SAN MICHELE MONDOVI'" ~ "SAN MICHELE MONDOVÌ",
+      join_name == "SAN NICOLO' D'ARCIDANO" ~ "SAN NICOLÒ D'ARCIDANO",
+      join_name == "SAN NICOLO' DI COMELICO" ~ "SAN NICOLÒ DI COMELICO",
+      join_name == "SAN NICOLO' GERREI" ~ "SAN NICOLÒ GERREI",
+      join_name == "SAN PIETRO DI CARIDA'" ~ "SAN PIETRO DI CARIDÀ",
+      join_name == "SANFRE'" ~ "SANFRÈ",
+      join_name == "SANTA CRISTINA VALGARDENA/ST. CHRISTINA IN GR�DEN" ~ "SANTA CRISTINA VALGARDENA/ST. CHRISTINA IN GRÖDEN",
+      join_name == "SAVOGNA D'ISONZO" ~ "SAVOGNA D'ISONZO-SOVODNJE OB SOČI",
+      join_name == "SELVA DEI MOLINI/M�HLWALD" ~ "SELVA DEI MOLINI/MÜHLWALD",
+      join_name == "SELVA DI VAL GARDENA/WOLKENSTEIN IN GR�DEN" ~ "SELVA DI VAL GARDENA/WOLKENSTEIN IN GRÖDEN",
+      join_name == "SGONICO" ~ "SGONICO-ZGONIK",
+      join_name == "TORRE MONDOVI'" ~ "TORRE MONDOVÌ",
+      join_name == "TRAVACO' SICCOMARIO" ~ "TRAVACÒ SICCOMARIO",
+      join_name == "TRINITA' D'AGULTU E VIGNOLA" ~ "TRINITÀ D'AGULTU E VIGNOLA",
+      join_name == "TUBRE/TAUFERS IM M�NSTERTAL" ~ "TUBRE/TAUFERS IM MÜNSTERTAL",
+      join_name == "VERANO/V�RAN" ~ "VERANO/VÖRAN",
+      join_name == "VERR�S" ~ "VERRÈS",
+      join_name == "VILLA D'ALME'" ~ "VILLA D'ALMÈ",
+      join_name == "VILLANOVA MONDOVI'" ~ "VILLANOVA MONDOVÌ",
+      TRUE ~ join_name
+    )
+  ) %>%
+  select(join_name, vote_share_pct)
+
+fdi_by_comune_map <- left_join(mun_shape_newclean, fdi_by_comune_newclean, by = "join_name")
+
+fdi_by_comune_plot <- ggplot(fdi_by_comune_map) +
+  geom_sf(aes(fill = vote_share_pct), color = "white", linewidth = 0.05) +
+  scale_fill_distiller(palette = "PuBu", direction = 1) +
+  labs(
+    title = "Fratelli d'Italia share by municipality (EU elections 2024)",
+    fill  = "FDI share (%)"
+  ) +
+  theme_bw()
+
+fdi_by_comune_plot
+
+ggsave(
+  file.path(path_out_maps, "fdi_comune_EU2024.pdf"),
+  plot = fdi_by_comune_plot,
+  width = 8,
+  height = 10)
+```
+```{r}
+fdi_roma_map <- fdi_by_comune_map %>%
+  filter(COD_PROV == 58) 
+
+fdi_roma_map <- ggplot(fdi_roma_map) +
+  geom_sf(aes(fill = vote_share_pct), color = "white", linewidth = 0.1) +
+  scale_fill_distiller(palette = "PuBu", direction = 1) +
+  labs(
+    title = "FdI share in the municipalities of the Metropolitan City of Rome (EU elections 2024)",
+    fill = "FdI share (%)"
+  ) +
+  theme_bw()
+
+ggsave(
+  file.path(path_out_maps, "fdi_share_roma_municipalities_EU2024.pdf"),
+  plot = fdi_roma_map,
+  width = 8,
+  height = 10)
+
+fdi_roma_map
+```
+## Mapping Lega by comune and in Rome
+
+```{r}
+lega_by_comune_clean <- lega_by_comune %>%
+  mutate(
+    join_name = str_squish(str_to_upper(DESCCOMUNE))
+  ) %>%
+  select(join_name, vote_share_pct)
+
+# Cleaning Lega by municipality/comune
+lega_by_comune_newclean <- lega_by_comune_clean %>%
+  mutate(
+    # fixing mismatch between electoral data and municipal shapefile: a sx i nomi nei electoral data, a dx i nomi nello shapefile
+    # join_name == "NOME_NEI_DATI_ELETTORALI" ~ "NOME_NELLO_SHAPEFILE"
+    join_name = case_when(
+      join_name == "AGLIE'" ~ "AGLIÈ",
+      join_name == "ALA' DEI SARDI" ~ "ALÀ DEI SARDI",
+      join_name == "ALI'" ~ "ALÌ",
+      join_name == "ALI' TERME" ~ "ALÌ TERME",
+      join_name == "ALME'" ~ "ALMÈ",
+      join_name == "ANTEY-SAINT-ANDRE'" ~ "ANTEY-SAINT-ANDRÉ",
+      join_name == "ARQUA' PETRARCA" ~ "ARQUÀ PETRARCA",
+      join_name == "ARQUA' POLESINE" ~ "ARQUÀ POLESINE",
+      join_name == "ARSIE'" ~ "ARSIÈ",
+      join_name == "BARZANO'" ~ "BARZANÒ",
+      join_name == "BASCAPE'" ~ "BASCAPÈ",
+      join_name == "BASELGA DI PINE'" ~ "BASELGA DI PINÈ",
+      join_name == "BASICO'" ~ "BASICÒ",
+      join_name == "BASTIA MONDOVI'" ~ "BASTIA MONDOVÌ",
+      join_name == "BELVI'" ~ "BELVÌ",
+      join_name == "BIANZE'" ~ "BIANZÈ",
+      join_name == "BIDONI'" ~ "BIDONÌ",
+      join_name == "BRIGNANO FRASCATA" ~ "BRIGNANO-FRASCATA",
+      join_name == "BUDDUSO'" ~ "BUDDUSÒ",
+      join_name == "CALATAFIMI SEGESTA" ~ "CALATAFIMI-SEGESTA",
+      join_name == "CANICATTI'" ~ "CANICATTÌ",
+      join_name == "CANTU'" ~ "CANTÙ",
+      join_name == "CARDE'" ~ "CARDÈ",
+      join_name == "CARRE'" ~ "CARRÈ",
+      join_name == "CARRU'" ~ "CARRÙ",
+      join_name == "CASTEL SAN NICCOLO'" ~ "CASTEL SAN NICCOLÒ",
+      join_name == "CASTELFRANCO PIANDISCO'" ~ "CASTELFRANCO PIANDISCÒ",
+      join_name == "CAVAGLIA'" ~ "CAVAGLIÀ",
+      join_name == "CEFALA' DIANA" ~ "CEFALÀ DIANA",
+      join_name == "CEFALU'" ~ "CEFALÙ",
+      join_name == "CESARO'" ~ "CESARÒ",
+      join_name == "CHATILLON" ~ "CHÂTILLON",
+      join_name == "CIGLIE'" ~ "CIGLIÈ",
+      join_name == "CIMINA'" ~ "CIMINÀ",
+      join_name == "CIRIE'" ~ "CIRIÈ",
+      join_name == "CIRO'" ~ "CIRÒ",
+      join_name == "CIRO' MARINA" ~ "CIRÒ MARINA",
+      join_name == "CITTA' DELLA PIEVE" ~ "CITTÀ DELLA PIEVE",
+      join_name == "CITTA' DI CASTELLO" ~ "CITTÀ DI CASTELLO",
+      join_name == "CITTA' SANT'ANGELO" ~ "CITTÀ SANT'ANGELO",
+      join_name == "CODOGNE'" ~ "CODOGNÈ",
+      join_name == "CONDRO'" ~ "CONDRÒ",
+      join_name == "CONTA'" ~ "CONTÀ",
+      join_name == "CUORGNE'" ~ "CUORGNÈ",
+      join_name == "DASA'" ~ "DASÀ",
+      join_name == "DOBERDO' DEL LAGO" ~ "DOBERDÒ DEL LAGO-DOBERDOB",
+      join_name == "DOLCE'" ~ "DOLCÈ",
+      join_name == "DUINO AURISINA" ~ "DUINO AURISINA-DEVIN NABREŽINA",
+      join_name == "ERBE'" ~ "ERBÈ",
+      join_name == "FENEGRO'" ~ "FENEGRÒ",
+      join_name == "FIAVE'" ~ "FIAVÈ",
+      join_name == "FORLI'" ~ "FORLÌ",
+      join_name == "FOSSO'" ~ "FOSSÒ",
+      join_name == "FRAZZANO'" ~ "FRAZZANÒ",
+      join_name == "GIARDINI NAXOS" ~ "GIARDINI-NAXOS",
+      join_name == "GUALTIERI SICAMINO'" ~ "GUALTIERI SICAMINÒ",
+      join_name == "GALTELLI'" ~ "GALTELLÌ",
+      join_name == "GAMBOLO'" ~ "GAMBOLÒ",
+      join_name == "HONE" ~ "HÔNE",
+      join_name == "JONADI" ~ "IONADI",
+      join_name == "LODE'" ~ "LODÈ",
+      join_name == "LORANZE'" ~ "LORANZÈ",
+      join_name == "LUSIGLIE'" ~ "LUSIGLIÈ",
+      join_name == "MAIERA'" ~ "MAIERÀ",
+      join_name == "MALE'" ~ "MALÉ",
+      join_name == "MANSUE'" ~ "MANSUÈ",
+      join_name == "MASERA' DI PADOVA" ~ "MASERÀ DI PADOVA",
+      join_name == "MAZZARRA' SANT'ANDREA" ~ "MAZZARRÀ SANT'ANDREA",
+      join_name == "MAZZE'" ~ "MAZZÈ",
+      join_name == "MELICUCCA'" ~ "MELICUCCÀ",
+      join_name == "MERI'" ~ "MERÌ",
+      join_name == "MONDOVI'" ~ "MONDOVÌ",
+      join_name == "MONTA'" ~ "MONTÀ",
+      join_name == "MONTALDO DI MONDOVI'" ~ "MONTALDO DI MONDOVÌ",
+      join_name == "MUGGIO'" ~ "MUGGIÒ",
+      join_name == "NARDO'" ~ "NARDÒ",
+      join_name == "ONANI'" ~ "ONANÌ",
+      join_name == "PALU'" ~ "PALÙ",
+      join_name == "PANCHIA'" ~ "PANCHIÀ",
+      join_name == "PATERNO'" ~ "PATERNÒ",
+      join_name == "PATU'" ~ "PATÙ",
+      join_name == "PETRONA'" ~ "PETRONÀ",
+      join_name == "PIOVA' MASSAIA" ~ "PIOVÀ MASSAIA",
+      join_name == "PLATI'" ~ "PLATÌ",
+      join_name == "PONTE SAN NICOLO'" ~ "PONTE SAN NICOLÒ",
+      join_name == "PORTOBUFFOLE'" ~ "PORTOBUFFOLÈ",
+      join_name == "PRE'-SAINT-DIDIER" ~ "PRÉ-SAINT-DIDIER",
+      join_name == "PRELA'" ~ "PRELÀ",
+      join_name == "RICCO' DEL GOLFO DI SPEZIA" ~ "RICCÒ DEL GOLFO DI SPEZIA",
+      join_name == "RODI' MILICI" ~ "RODÌ MILICI",
+      join_name == "ROE' VOLCIANO" ~ "ROÈ VOLCIANO",
+      join_name == "RONCA'" ~ "RONCÀ",
+      join_name == "RORA'" ~ "RORÀ",
+      join_name == "ROSA'" ~ "ROSÀ",
+      join_name == "ROVERE' DELLA LUNA" ~ "ROVERÈ DELLA LUNA",
+      join_name == "ROVERE' VERONESE" ~ "ROVERÈ VERONESE",
+      join_name == "ROVEREDO DI GUA'" ~ "ROVEREDO DI GUÀ",
+      join_name == "SALO'" ~ "SALÒ",
+      join_name == "SAN DONA' DI PIAVE" ~ "SAN DONÀ DI PIAVE",
+      join_name == "SANTA MARIA HOE'" ~ "SANTA MARIA HOÈ",
+      join_name == "SANTA MARIA LA CARITA'" ~ "SANTA MARIA LA CARITÀ",
+      join_name == "SANTHIA'" ~ "SANTHIÀ",
+      join_name == "SCORZE'" ~ "SCORZÈ",
+      join_name == "SECLI'" ~ "SECLÌ",
+      join_name == "SENORBI'" ~ "SENORBÌ",
+      join_name == "SERRA RICCO'" ~ "SERRA RICCÒ",
+      join_name == "SODDI'" ~ "SODDÌ",
+      join_name == "SORGA'" ~ "SORGÀ",
+      join_name == "STALETTI'" ~ "STALETTÌ",
+      join_name == "TEMU'" ~ "TEMÙ",
+      join_name == "TORPE'" ~ "TORPÈ",
+      join_name == "TORTOLI'" ~ "TORTOLÌ",
+      join_name == "TRINITA'" ~ "TRINITÀ",
+      join_name == "ULA TIRSO" ~ "ULÀ TIRSO",
+      join_name == "VESTIGNE'" ~ "VESTIGNÈ",
+      join_name == "VIALFRE'" ~ "VIALFRÈ",
+      join_name == "VIGANO'" ~ "VIGANÒ",
+      join_name == "VIGGIU'" ~ "VIGGIÙ",
+      join_name == "VIU'" ~ "VIÙ",
+      join_name == "ZANE'" ~ "ZANÈ",
+      join_name == "ZERBOLO'" ~ "ZERBOLÒ",
+      join_name == "ZOPPE' DI CADORE" ~ "ZOPPÈ DI CADORE",
+      join_name == "EMAR�SE" ~ "EMARÈSE",
+      join_name == "FIE' ALLO SCILIAR/V�LS AM SCHLERN" ~ "FIÈ ALLO SCILIAR/VÖLS AM SCHLERN",
+      join_name == "FORLI' DEL SANNIO" ~ "FORLÌ DEL SANNIO",
+      join_name == "FORZA D'AGRO'" ~ "FORZA D'AGRÒ",
+      join_name == "FUNES/VILLN�SS" ~ "FUNES/VILLNÖSS",
+      join_name == "F�NIS" ~ "FÉNIS",
+      join_name == "GABBIONETA BINANUOVA" ~ "GABBIONETA-BINANUOVA",
+      join_name == "GADESCO PIEVE DELMONA" ~ "GADESCO-PIEVE DELMONA",
+      join_name == "GONNOSNO'" ~ "GONNOSNÒ",
+      join_name == "GRESSONEY-LA-TRINITE'" ~ "GRESSONEY-LA-TRINITÉ",
+      join_name == "JOVENCAN" ~ "JOVENÇAN",
+      join_name == "LUSON/L�SEN" ~ "LUSON/LÜSEN",
+      join_name == "MAGRE' SULLA STRADA DEL VINO/MARGREID AN DER WEINSTRASSE" ~ "MAGRÈ SULLA STRADA DEL VINO/MARGREID AN DER WEINSTRASSE",
+      join_name == "MELTINA/M�LTEN" ~ "MELTINA/MÖLTEN",
+      join_name == "MONRUPINO" ~ "MONRUPINO-REPENTABOR",
+      join_name == "MONTESCUDO - MONTE COLOMBO" ~ "MONTESCUDO-MONTE COLOMBO",
+      join_name == "MONTU' BECCARIA" ~ "MONTÙ BECCARIA",
+      join_name == "NUGHEDU SAN NICOLO'" ~ "NUGHEDU SAN NICOLÒ",
+      join_name == "PALU' DEL FERSINA" ~ "PALÙ DEL FERSINA",
+      join_name == "PRATO ALLO STELVIO/PRAD AM STILFSER JOCH" ~ "PRATO ALLO STELVIO/PRAD AM STILFSERJOCH",
+      join_name == "RASUN ANTERSELVA/RASEN-ANTHOLZ" ~ "RASUN-ANTERSELVA/RASEN-ANTHOLZ",
+      join_name == "RHEMES-NOTRE-DAME" ~ "RHÊMES-NOTRE-DAME",
+      join_name == "RHEMES-SAINT-GEORGES" ~ "RHÊMES-SAINT-GEORGES",
+      join_name == "RIO DI PUSTERIA/M�HLBACH" ~ "RIO DI PUSTERIA/MÜHLBACH",
+      join_name == "ROCCA CIGLIE'" ~ "ROCCA CIGLIÈ",
+      join_name == "ROCCAFORTE MONDOVI'" ~ "ROCCAFORTE MONDOVÌ",
+      join_name == "RUFFRE'-MENDOLA" ~ "RUFFRÈ-MENDOLA",
+      join_name == "SAINT-RHEMY-EN-BOSSES" ~ "SAINT-RHÉMY-EN-BOSSES",
+      join_name == "SAN FLORIANO DEL COLLIO" ~ "SAN FLORIANO DEL COLLIO-ŠTEVERJAN",
+      join_name == "SAN GIOVANNI DI FASSA" ~ "SAN GIOVANNI DI FASSA-SÈN JAN",
+      join_name == "SAN MICHELE MONDOVI'" ~ "SAN MICHELE MONDOVÌ",
+      join_name == "SAN NICOLO' D'ARCIDANO" ~ "SAN NICOLÒ D'ARCIDANO",
+      join_name == "SAN NICOLO' DI COMELICO" ~ "SAN NICOLÒ DI COMELICO",
+      join_name == "SAN NICOLO' GERREI" ~ "SAN NICOLÒ GERREI",
+      join_name == "SAN PIETRO DI CARIDA'" ~ "SAN PIETRO DI CARIDÀ",
+      join_name == "SANFRE'" ~ "SANFRÈ",
+      join_name == "SANTA CRISTINA VALGARDENA/ST. CHRISTINA IN GR�DEN" ~ "SANTA CRISTINA VALGARDENA/ST. CHRISTINA IN GRÖDEN",
+      join_name == "SAVOGNA D'ISONZO" ~ "SAVOGNA D'ISONZO-SOVODNJE OB SOČI",
+      join_name == "SELVA DEI MOLINI/M�HLWALD" ~ "SELVA DEI MOLINI/MÜHLWALD",
+      join_name == "SELVA DI VAL GARDENA/WOLKENSTEIN IN GR�DEN" ~ "SELVA DI VAL GARDENA/WOLKENSTEIN IN GRÖDEN",
+      join_name == "SGONICO" ~ "SGONICO-ZGONIK",
+      join_name == "TORRE MONDOVI'" ~ "TORRE MONDOVÌ",
+      join_name == "TRAVACO' SICCOMARIO" ~ "TRAVACÒ SICCOMARIO",
+      join_name == "TRINITA' D'AGULTU E VIGNOLA" ~ "TRINITÀ D'AGULTU E VIGNOLA",
+      join_name == "TUBRE/TAUFERS IM M�NSTERTAL" ~ "TUBRE/TAUFERS IM MÜNSTERTAL",
+      join_name == "VERANO/V�RAN" ~ "VERANO/VÖRAN",
+      join_name == "VERR�S" ~ "VERRÈS",
+      join_name == "VILLA D'ALME'" ~ "VILLA D'ALMÈ",
+      join_name == "VILLANOVA MONDOVI'" ~ "VILLANOVA MONDOVÌ",
+      TRUE ~ join_name
+    )
+  ) %>%
+  select(join_name, vote_share_pct)
+
+lega_by_comune_map <- left_join(mun_shape_newclean, lega_by_comune_newclean, by = "join_name")
+
+lega_by_comune_plot <- ggplot(lega_by_comune_map) +
+  geom_sf(aes(fill = vote_share_pct), color = "white", linewidth = 0.05) +
+  scale_fill_distiller(palette = "BuGn", direction = 1) +
+  labs(
+    title = "Lega share by municipality (EU elections 2024)",
+    fill  = "Lega share (%)"
+  ) +
+  theme_bw()
+
+lega_by_comune_plot
+
+ggsave(
+  file.path(path_out_maps, "lega_comune_EU2024.pdf"),
+  plot = lega_by_comune_plot,
+  width = 8,
+  height = 10)
+```
+
+```{r}
+lega_roma_map <- lega_by_comune_map %>%
+  filter(COD_PROV == 58) 
+
+lega_roma_map <- ggplot(lega_roma_map) +
+  geom_sf(aes(fill = vote_share_pct), color = "white", linewidth = 0.1) +
+  scale_fill_distiller(palette = "BuGn", direction = 1) +
+  labs(
+    title = "Lega share in the municipalities of the Metropolitan City of Rome (EU elections 2024)",
+    fill = "Lega share (%)"
+  ) +
+  theme_bw()
+
+ggsave(
+  file.path(path_out_maps, "lega_share_roma_municipalities_EU2024.pdf"),
+  plot = lega_roma_map,
+  width = 8,
+  height = 10)
+
+lega_roma_map
+```
+
